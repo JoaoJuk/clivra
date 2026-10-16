@@ -256,10 +256,10 @@ export function App() {
     },
   };
 
-  async function handleAuth(mode: 'login' | 'register', input: { email: string; password: string; name?: string }) {
+  async function handleAuth(mode: 'login' | 'register', input: { email: string; password: string; name?: string; setupCode?: string }) {
     setActionError(null);
     const session = mode === 'register'
-      ? await api.register({ email: input.email, password: input.password, name: input.name || '' })
+      ? await api.register({ email: input.email, password: input.password, name: input.name || '', ...(input.setupCode ? { setupCode: input.setupCode } : {}) })
       : await api.login({ email: input.email, password: input.password });
     queryClient.clear();
     await queryPersisterRemove();

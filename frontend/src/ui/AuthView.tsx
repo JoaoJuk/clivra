@@ -3,7 +3,7 @@ import { Icon } from "./Icon";
 import "./styles.css";
 
 export type AuthMode = "login" | "register";
-export interface AuthPayload { email: string; password: string; name?: string }
+export interface AuthPayload { email: string; password: string; name?: string; setupCode?: string }
 export interface AuthViewProps {
   onSubmit: (mode: AuthMode, payload: AuthPayload) => Promise<void> | void;
   loading?: boolean;
@@ -26,6 +26,7 @@ export function AuthView({ onSubmit, loading = false, error, offlineAvailable, o
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [setupCode, setSetupCode] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
   const [localBusy, setLocalBusy] = useState(false);
@@ -38,7 +39,7 @@ export function AuthView({ onSubmit, loading = false, error, offlineAvailable, o
     if (mode === "register" && password.length < 8) { setLocalError("A senha precisa ter pelo menos 8 caracteres."); return; }
     setLocalBusy(true);
     try {
-      await onSubmit(mode, { email: email.trim(), password, ...(mode === "register" ? { name: name.trim() } : {}) });
+      await onSubmit(mode, { email: email.trim(), password, ...(mode === "register" ? { name: name.trim(), setupCode: setupCode.trim() } : {}) });
     } catch (cause) {
       setLocalError(cause instanceof Error ? cause.message : "Não foi possível acessar sua conta.");
     } finally {
@@ -76,6 +77,12 @@ export function AuthView({ onSubmit, loading = false, error, offlineAvailable, o
                 <button type="button" onClick={() => setShowPassword(!showPassword)} aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}>{showPassword ? "Ocultar" : "Mostrar"}</button>
               </span>
             </label>
+            {mode === "register" && (
+              <label className="auth-field">
+                <span>Código de configuração</span>
+                <input value={setupCode} onChange={(event) => setSetupCode(event.target.value)} autoComplete="off" autoCapitalize="off" autoCorrect="off" spellCheck={false} placeholder="Fornecido na instalação do servidor" />
+              </label>
+            )}
             {(localError || error) && <p className="form-error" role="alert">{localError || error}</p>}
             <button type="submit" className="auth-submit" disabled={loading || localBusy}>
               <span>{loading || localBusy ? "Aguarde..." : mode === "login" ? "Entrar na conta" : "Criar conta"}</span>
@@ -85,7 +92,7 @@ export function AuthView({ onSubmit, loading = false, error, offlineAvailable, o
 
           <div className="auth-switch">
             <span>{mode === "login" ? "Ainda não tem uma conta?" : "Já tem uma conta?"}</span>
-            <button type="button" onClick={() => { setMode(mode === "login" ? "register" : "login"); setPassword(""); setShowPassword(false); setLocalError(null); }}>{mode === "login" ? "Criar conta" : "Entrar"}</button>
+            <button type="button" onClick={() => { setMode(mode === "login" ? "register" : "login"); setPassword(""); setSetupCode(""); setShowPassword(false); setLocalError(null); }}>{mode === "login" ? "Criar conta" : "Entrar"}</button>
           </div>
           {offlineAvailable && onOpenOffline && <button type="button" className="auth-offline" onClick={onOpenOffline}><Icon name="wifiOff" size={17} /> Ver últimos dados offline</button>}
         </div>

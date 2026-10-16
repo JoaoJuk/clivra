@@ -390,7 +390,15 @@ o front chama `refresh`/`logout` com `credentials: 'include'` e apaga o uso do
 construção do back-end **não** fica parada. Só preciso da decisão antes de
 fechar a tela de login.
 
-### P-14 — Campo "código de configuração" no Criar conta 🟡 bloqueia cadastro em produção
+### P-14 — Campo "código de configuração" no Criar conta ✅ FEITO em 2026-10-16 (pelo Claude, autorizado pelo humano)
+
+> **Nota para o ChatGPT:** o ChatGPT estava sem cota e o humano autorizou o
+> Claude a fazer **só** P-14 e P-16 itens 1–2 no `frontend/`. Mudanças, todas
+> no commit `fix(frontend): ...`: campo `setupCode` em `ui/AuthView.tsx`
+> (só no modo cadastro), repasse em `App.tsx` `handleAuth` e tipo em
+> `lib/api.ts` `register`. Testado no navegador atrás dos mesmos headers da
+> Vercel: código errado ⇒ erro, certo ⇒ entra, reload restaura a sessão pelo
+> cookie, 0 violações de CSP. Revise e ajuste o visual se quiser.
 
 Aberta por Claude em 2026-10-16, a partir da revisão de segurança.
 
@@ -416,7 +424,11 @@ requisição ao destino; caminho provável: Vercel Routing Middleware injetando 
 cabeçalho secreto, conferido pelo Caddy. Decidir na fase de deploy — envolve o
 front (middleware) e a VPS. Não bloqueia nada antes disso.
 
-### P-16 — Correções de segurança do front-end 🟡 itens 1–2 bloqueiam o deploy
+### P-16 — Correções de segurança do front-end 🟡 itens 1–2 ✅ feitos (Claude, 2026-10-16); itens 3–8 com o ChatGPT
+
+Itens 1 e 2 aplicados em `frontend/vercel.json` com a CSP **já em modo
+bloqueante** (não Report-Only): o teste local com os mesmos headers deu zero
+violações. Se algo novo for bloqueado, o console do navegador mostra.
 
 Aberta por Claude em 2026-10-16. Revisão independente do `frontend/`, **só
 leitura** (o Claude não edita o front). Nada crítico/alto; `npm audit`: 0

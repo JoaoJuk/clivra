@@ -124,7 +124,7 @@ export class ApiClient {
     writeStorage(userStorageKey, null);
   }
 
-  async register(input: { email: string; password: string; name: string }): Promise<AuthSession> {
+  async register(input: { email: string; password: string; name: string; setupCode?: string }): Promise<AuthSession> {
     const session = await this.request<AuthSession>('/v1/auth/register', { method: 'POST', body: JSON.stringify(input) }, false);
     return this.rememberSession(session);
   }
