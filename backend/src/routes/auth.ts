@@ -41,7 +41,13 @@ const loginBody = z.object({
 // Sem corpo = token vem do cookie (P-13). Com corpo = contrato v1 atual.
 const refreshBody = z.object({ refreshToken: z.string().min(1).max(512).optional() }).nullish();
 
-const publicUser = z.object({ id: z.string(), email: z.string(), name: z.string(), createdAt: z.string() });
+const publicUser = z.object({
+  id: z.string(),
+  email: z.string(),
+  name: z.string(),
+  role: z.enum(['admin', 'member']),
+  createdAt: z.string(),
+});
 
 // Schema de resposta = lista do que pode sair. Campo fora daqui não é enviado.
 const sessionResponse = z.object({
@@ -89,6 +95,12 @@ export async function authRoutes(app: FastifyInstance, opts: AuthRouteOptions): 
       config: { rateLimit: { max: 5, timeWindow: '1 hour' } },
     },
     async (request, reply) => sendSession(reply, await auth.register(request.body), 201),
+  );
+
+  r.get(
+    '/v1/auth/registration',
+    { schema: { response: { 200: z.object({ mode: z.enum(['owner_setup', 'invite_only']) }) } } },
+    async () => ({ mode: await auth.registrationMode() }),
   );
 
   r.post(

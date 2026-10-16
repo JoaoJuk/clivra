@@ -15,6 +15,20 @@
       "when": 1792173306409,
       "tag": "0001_email_codes",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792186589538,
+      "tag": "0002_family_invites",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1792186600217,
+      "tag": "0003_drop_is_owner",
+      "breakpoints": true
     }
   ]
 }

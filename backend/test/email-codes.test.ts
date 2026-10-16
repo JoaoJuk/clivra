@@ -90,11 +90,11 @@ describe('POST /v1/auth/email-code (cadastro)', () => {
     assert.equal(sent.length, 0);
   });
 
-  test('com dono já cadastrado responde REGISTRATION_CLOSED', async () => {
+  test('com admin já cadastrado: e-mail não convidado leva 202 e nenhum e-mail sai', async () => {
     await registerOwner();
     const res = await requestCode({ email: 'outra@pessoa.com', purpose: 'register', setupCode: SETUP_CODE });
-    assert.equal(res.statusCode, 403);
-    assert.equal(res.json().error.code, 'REGISTRATION_CLOSED');
+    assert.equal(res.statusCode, 202);
+    await new Promise((r) => setTimeout(r, 300));
     assert.equal(sent.length, 0);
   });
 
@@ -190,10 +190,10 @@ describe('POST /v1/auth/register com código de e-mail', () => {
 
   test('o código vale uma vez só', async () => {
     await registerOwner();
-    // Mesmo que o cadastro reabrisse, o código já foi consumido: aqui o dono
-    // existe, então o servidor responde REGISTRATION_CLOSED antes.
+    // O código do admin já foi consumido; sem convite, nada mais entra.
     const res = await register({ emailCode: '123456' });
-    assert.equal(res.statusCode, 403);
+    assert.equal(res.statusCode, 400);
+    assert.equal(res.json().error.code, 'INVALID_EMAIL_CODE');
   });
 
   test('código com formato errado vira INVALID_EMAIL_CODE', async () => {

@@ -27,8 +27,10 @@ histórico completo (discussões, pendências já resolvidas) está no git:
 | # | Tema | Decisão |
 |---|---|---|
 | D1 | Bancos da v1 | Nubank e Itaú |
-| D5 | Autenticação | E-mail + senha, **um único dono**. O 1º cadastro exige o código de configuração (`OWNER_SETUP_CODE`, guardado na VPS) |
-| D6 | Categorias | Lista fechada definida pelo back (contrato §4) |
+| D5 | Autenticação | E-mail + senha + código por e-mail. O 1º cadastro (o admin) exige o código de configuração (`OWNER_SETUP_CODE`, guardado na VPS) |
+| D17 | Categorias por pessoa | Lista **padrão** (contrato §4) para todos **+ categorias próprias** que cada pessoa cria, renomeia e apaga — visíveis só para ela. Regras aprendidas (P2) também são por pessoa. Entra com a tela Cartões/Categorias (exige mudança no contrato §4, acordada com o front). Decidido pelo humano em 2026-10-16 |
+| D16 | Família | Um **admin** (quem instalou) e familiares **convidados** por ele (`member`). Sem cadastro aberto. **Gastos separados:** cada um vê só os seus. O painel do admin mostra só dados de conta (usuários, convites, último acesso, aparelhos, bloquear/desconectar) — nunca gastos dos outros. Decidido pelo humano em 2026-10-16 |
+| D6 | Categorias | ~~Lista fechada~~ → substituída pela D17 |
 | D7 | Melhorias | M1 parcelamento, M2 assinaturas, M3 orçamento, M4 dedupe, M5 estorno, M6 export — todas aceitas |
 | D10 | Captura no iPhone | Colar texto + Atalhos do iOS → `POST /v1/ingest/raw`. Sem Open Finance, e-mail ou OCR de print |
 | D11 | Categorização | Regra aprendida → dicionário local → **Jev** → pergunta (detalhe abaixo) |
@@ -68,6 +70,19 @@ Entram no contrato como **v1.1.0** (só adições) quando o ChatGPT confirmar.
 ---
 
 ## Pendências abertas
+
+### P-20 — Família: cadastro por convite e painel do admin (ChatGPT)
+Contrato 1.0.4 (§1 e §17). Back pronto (homologação).
+1. **Criar conta:** chamar `GET /v1/auth/registration`. `owner_setup` ⇒
+   mostrar o campo Código de configuração (como hoje). `invite_only` ⇒
+   esconder o campo e mostrar "Para criar conta, peça um convite ao
+   administrador" (o resto do fluxo de código por e-mail não muda).
+2. **Ajustes → "Família"** (só se `user.role === "admin"`): lista de pessoas
+   (nome, e-mail, último acesso, nº de aparelhos, bloqueada?), botões
+   Bloquear/Desbloquear e Desconectar aparelhos (com confirmação); convites
+   pendentes com Revogar; campo "Convidar por e-mail".
+3. Login com `403 FORBIDDEN` ⇒ mostrar a mensagem do servidor (conta bloqueada).
+4. Nenhuma tela do admin mostra gasto de outra pessoa (D16).
 
 ### P-19 — Preview da Vercel chamar a API de homologação — ✅ feito (`frontend/middleware.ts`), falta a homologação no ar
 Hoje o `vercel.json` manda `/v1/*` sempre para a produção, inclusive no
@@ -121,7 +136,8 @@ O front já usa só o cookie. Remover o campo do corpo de `login`/`register`/
 `refresh` (contrato v2.0.0) depois que o ChatGPT confirmar que não depende dele.
 
 ### Riscos aceitos
-- O access token vale até 15 min depois do logout **e da troca de senha** (app de 1 pessoa).
+- O access token vale até 15 min depois do **logout** (bloqueio, troca de
+  senha e "desconectar" já derrubam o access token na hora).
 - "Esqueci a senha" tem teto de 5 códigos/dia por e-mail: quem souber seu
   e-mail pode gastar o teto, mas os códigos chegam na **sua** caixa e qualquer
   um ainda válido serve. Saída de emergência: `ssh oracle`.
@@ -148,7 +164,7 @@ O front já usa só o cookie. Remover o campo do corpo de `login`/`register`/
 
 ## Roadmap do back-end (na ordem das telas)
 
-1. **Cartões:** CRUD de `/v1/cards`, `GET /v1/categories`.
+1. **Cartões e Categorias:** CRUD de `/v1/cards`; `/v1/categories` com a lista padrão + categorias próprias de cada pessoa (D17).
 2. **Lançar compra:** `POST /v1/transactions` (dedupe M4, parcelamento M1),
    `POST /v1/ingest/raw` + parsers Nubank/Itaú, atalho do iOS.
 3. **Transações:** listagem com filtros e paginação, edição, estorno (M5), lote.

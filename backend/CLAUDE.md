@@ -68,7 +68,8 @@ src/db/        queries Drizzle; uma função por operação; recebe `db: Db`
    resposta é a lista do que pode sair; campo interno nunca vaza.
 2. **`preHandler: requireAuth`** em tudo que não for `health`/`auth`.
 3. **Isolamento por dono:** toda query de recurso filtra por `request.userId`
-   (mesmo sendo app de 1 pessoa — defesa em profundidade contra IDOR).
+   (família, D16: cada pessoa só vê o que é dela — falha aqui vaza gasto de
+   um familiar para outro).
 4. Erros só via `AppError`/`errors.*` → envelope do contrato §2.
 5. Dinheiro `int` centavos; datas `toIso()`; IDs `newId()` (UUID v7).
 6. Rate limit específico se a rota for cara ou sensível.
@@ -92,7 +93,10 @@ src/db/        queries Drizzle; uma função por operação; recebe `db: Db`
 | Helmet (CSP `default-src 'none'`), CORS com origens exatas | `app.ts` |
 | Parser JSON seguro (bloqueia `__proto__`), body ≤ 64 KB | `app.ts` |
 | Log sem query string, corpo, cookie, Authorization (P4) | `app.ts` (serializers) |
-| Um único dono garantido no banco | `db/schema.ts` (`users_single_owner_key`) |
+| Um único admin garantido no banco (índice parcial) | `db/schema.ts` (`users_single_admin_key`) |
+| Depois do admin, cadastro só com convite ativo + código de e-mail; resposta igual para convidado ou não | `services/auth.ts` |
+| Rotas `/v1/admin/*` com `requireAdmin`; respostas sem dado financeiro | `routes/admin.ts`, `plugins/auth-guard.ts` |
+| Todo request confere usuário no banco: bloqueio/corte de sessão derruba o access token na hora (`iat_ms`) | `services/auth.ts` (`authenticate`), `services/tokens.ts` |
 | Código por e-mail: HMAC no banco, 10 min, uso único, 5 tentativas por código (atômico), 60 s entre envios e 5/dia (advisory lock), códigos anteriores seguem válidos (anti-bloqueio) | `services/email-codes.ts`, `db/email-codes.ts` |
 | "Esqueci a senha" responde antes de consultar o banco (não revela conta nem por tempo) | `services/auth.ts` (`requestEmailCode`) |
 | Troca de senha: `sessions_valid_after` + revogação; `refresh` confere o corte **depois** de gravar o token novo (sem corrida) | `services/auth.ts` (`resetPassword`, `refresh`) |

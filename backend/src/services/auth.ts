@@ -1,5 +1,6 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import type { Db } from '../db/client.js';
+import { acceptInvite, findActiveInvite } from '../db/invites.js';
 import {
   findRefreshTokenByHash,
   insertRefreshToken,
@@ -7,8 +8,15 @@ import {
   revokeFamily,
   revokeIfActive,
 } from '../db/refresh-tokens.js';
-import type { UserRow } from '../db/schema.js';
-import { findUserByEmail, findUserById, hasAnyUser, insertOwner, updatePasswordAndCutSessions } from '../db/users.js';
+import type { UserRole, UserRow } from '../db/schema.js';
+import {
+  findUserByEmail,
+  findUserById,
+  hasAnyUser,
+  insertUser,
+  touchLastLogin,
+  updatePasswordAndCutSessions,
+} from '../db/users.js';
 import { errors } from '../lib/errors.js';
 import { newId, toIso } from '../lib/ids.js';
 import type { EmailCodeService } from './email-codes.js';
@@ -20,6 +28,7 @@ export interface PublicUser {
   id: string;
   email: string;
   name: string;
+  role: UserRole;
   createdAt: string;
 }
 
@@ -30,13 +39,25 @@ export interface Session {
   user: PublicUser;
 }
 
+export interface AuthContext {
+  userId: string;
+  role: UserRole;
+}
+
 export function toPublicUser(user: UserRow): PublicUser {
-  return { id: user.id, email: user.email, name: user.name, createdAt: toIso(user.createdAt) };
+  return { id: user.id, email: user.email, name: user.name, role: user.role, createdAt: toIso(user.createdAt) };
 }
 
 function isUniqueViolation(error: unknown): boolean {
   const cause = error instanceof Error && 'cause' in error ? error.cause : error;
   return typeof cause === 'object' && cause !== null && 'code' in cause && cause.code === '23505';
+}
+
+function constraintOf(error: unknown): string | undefined {
+  const cause = error instanceof Error && 'cause' in error ? error.cause : error;
+  return typeof cause === 'object' && cause !== null && 'constraint' in cause && typeof cause.constraint === 'string'
+    ? cause.constraint
+    : undefined;
 }
 
 function sameSecret(given: string, expected: string): boolean {
@@ -46,15 +67,21 @@ function sameSecret(given: string, expected: string): boolean {
   return timingSafeEqual(a, b);
 }
 
+// Sessão emitida antes do corte (troca de senha, bloqueio, "derrubar sessões").
+function issuedBeforeCut(user: UserRow, issuedAtMs: number): boolean {
+  return user.sessionsValidAfter !== null && issuedAtMs < user.sessionsValidAfter.getTime();
+}
+
 export function createAuthService(deps: {
   db: Db;
   accessTokens: AccessTokens;
   refreshTtlDays: number;
-  // undefined + produção = cadastro fechado; undefined fora de produção = sem código.
+  // Exigido só no 1º cadastro (o admin). undefined + produção = cadastro do
+  // admin fechado; undefined fora de produção = sem código.
   ownerSetupCode: string | undefined;
   production: boolean;
-  // undefined = sem SMTP configurado: cadastro sem código de e-mail e sem
-  // "esqueci a senha".
+  // undefined = sem SMTP configurado: cadastro sem código de e-mail, sem
+  // convites e sem "esqueci a senha".
   emailCodes: EmailCodeService | undefined;
 }) {
   const { db, accessTokens } = deps;
@@ -82,8 +109,15 @@ export function createAuthService(deps: {
     };
   }
 
-  async function assertCanRegister(setupCode: string | undefined): Promise<void> {
-    if (await hasAnyUser(db)) throw errors.registrationClosed();
+  // "Último acesso" do painel: só depois que a sessão foi aceita (uma conta
+  // bloqueada recusada no refresh não pode parecer ativa).
+  async function accepted(session: Session): Promise<Session> {
+    await touchLastLogin(db, session.user.id);
+    return session;
+  }
+
+  // Cadastro do admin (primeira conta do app): exige o código de configuração.
+  function assertOwnerSetup(setupCode: string | undefined): void {
     if (deps.ownerSetupCode) {
       if (!setupCode || !sameSecret(setupCode, deps.ownerSetupCode)) throw errors.invalidSetupCode();
     } else if (deps.production) {
@@ -91,9 +125,32 @@ export function createAuthService(deps: {
     }
   }
 
+  async function createUser(input: { email: string; password: string; name: string }, role: UserRole, inviteId?: string) {
+    const passwordHash = await hashPassword(input.password);
+    try {
+      return await db.transaction(async (tx) => {
+        if (inviteId && !(await acceptInvite(tx, inviteId, new Date()))) throw errors.invalidEmailCode();
+        return insertUser(tx, { id: newId(), email: input.email, name: input.name, passwordHash, role });
+      });
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        // Dois cadastros de admin ao mesmo tempo: o índice parcial barra o segundo.
+        if (constraintOf(error) === 'users_single_admin_key') throw errors.registrationClosed();
+        throw errors.emailTaken();
+      }
+      throw error;
+    }
+  }
+
   return {
     refreshTtlMs,
     emailCodesEnabled: deps.emailCodes !== undefined,
+
+    // Diz ao front se a tela de cadastro é a do admin (com código de
+    // configuração) ou a de convidado.
+    async registrationMode(): Promise<'owner_setup' | 'invite_only'> {
+      return (await hasAnyUser(db)) ? 'invite_only' : 'owner_setup';
+    },
 
     async register(input: {
       email: string;
@@ -102,20 +159,22 @@ export function createAuthService(deps: {
       setupCode?: string | undefined;
       emailCode?: string | undefined;
     }): Promise<Session> {
-      await assertCanRegister(input.setupCode);
-      if (deps.emailCodes) {
-        if (!input.emailCode) throw errors.invalidEmailCode();
-        await deps.emailCodes.consume(input.email, 'register', input.emailCode);
+      if (!(await hasAnyUser(db))) {
+        assertOwnerSetup(input.setupCode);
+        if (deps.emailCodes) {
+          if (!input.emailCode) throw errors.invalidEmailCode();
+          await deps.emailCodes.consume(input.email, 'register', input.emailCode);
+        }
+        return accepted(await issueSession(await createUser(input, 'admin')));
       }
-      const passwordHash = await hashPassword(input.password);
-      try {
-        const user = await insertOwner(db, { id: newId(), email: input.email, name: input.name, passwordHash });
-        return await issueSession(user);
-      } catch (error) {
-        // Dois cadastros ao mesmo tempo: o índice único de dono barra o segundo.
-        if (isUniqueViolation(error)) throw errors.registrationClosed();
-        throw error;
-      }
+
+      // Depois do admin, só entra quem foi convidado — e sempre com código de e-mail.
+      if (!deps.emailCodes) throw errors.registrationClosed();
+      if (!input.emailCode) throw errors.invalidEmailCode();
+      await deps.emailCodes.consume(input.email, 'register', input.emailCode);
+      const invite = await findActiveInvite(db, input.email, new Date());
+      if (!invite) throw errors.invalidEmailCode();
+      return accepted(await issueSession(await createUser(input, 'member', invite.id)));
     },
 
     async login(input: { email: string; password: string }, clientIp: string): Promise<Session> {
@@ -134,7 +193,9 @@ export function createAuthService(deps: {
         throw errors.invalidCredentials();
       }
       throttlePerClient.reset(clientKey);
-      return issueSession(user);
+      // Só depois da senha certa: quem não sabe a senha não descobre o bloqueio.
+      if (user.disabledAt) throw errors.accountDisabled();
+      return accepted(await issueSession(user));
     },
 
     // Rotação: cada refresh token vale uma vez só. Se um token já usado aparecer
@@ -152,31 +213,40 @@ export function createAuthService(deps: {
       if (!user) throw errors.invalidRefreshToken();
       const session = await issueSession(user, row.familyId);
       // Conferido DEPOIS de gravar o token novo (ver resetPassword): sessão
-      // anterior a uma troca de senha cai, mesmo em corrida com a troca.
+      // anterior a um corte cai, mesmo em corrida com o corte.
       const fresh = await findUserById(db, row.userId);
-      if (!fresh || (fresh.sessionsValidAfter && row.createdAt < fresh.sessionsValidAfter)) {
+      if (!fresh || fresh.disabledAt || issuedBeforeCut(fresh, row.createdAt.getTime())) {
         await revokeFamily(db, row.familyId, new Date());
         throw errors.invalidRefreshToken();
       }
-      return session;
+      return accepted(session);
     },
 
-    // Envia o código de 6 dígitos. Para "esqueci a senha" a resposta é a mesma
-    // exista ou não a conta (não revela qual e-mail está cadastrado).
+    // Envia o código de 6 dígitos. Fora o cadastro do admin, a resposta é a
+    // mesma exista ou não a conta/o convite (não revela quem está cadastrado
+    // ou convidado), e o trabalho roda depois de responder.
     async requestEmailCode(input: {
       email: string;
       purpose: 'register' | 'password_reset';
       setupCode?: string | undefined;
     }): Promise<void> {
       if (!deps.emailCodes) throw errors.emailDisabled();
+      const emailCodes = deps.emailCodes;
       if (input.purpose === 'register') {
-        await assertCanRegister(input.setupCode);
-        await deps.emailCodes.issue(input.email, 'register');
+        if (!(await hasAnyUser(db))) {
+          assertOwnerSetup(input.setupCode);
+          await emailCodes.issue(input.email, 'register');
+          return;
+        }
+        emailCodes.issueInBackground(input.email, 'register', async () =>
+          Boolean(await findActiveInvite(db, input.email, new Date())) && !(await findUserByEmail(db, input.email)),
+        );
         return;
       }
-      deps.emailCodes.issueInBackground(input.email, 'password_reset', async () =>
-        Boolean(await findUserByEmail(db, input.email)),
-      );
+      emailCodes.issueInBackground(input.email, 'password_reset', async () => {
+        const user = await findUserByEmail(db, input.email);
+        return Boolean(user && !user.disabledAt);
+      });
     },
 
     // Troca a senha com o código do e-mail e derruba todas as sessões abertas.
@@ -184,7 +254,8 @@ export function createAuthService(deps: {
       if (!deps.emailCodes) throw errors.emailDisabled();
       await deps.emailCodes.consume(input.email, 'password_reset', input.emailCode);
       const user = await findUserByEmail(db, input.email);
-      if (!user) throw errors.invalidEmailCode();
+      // Conta bloqueada não troca a senha nem com código pedido antes do bloqueio.
+      if (!user || user.disabledAt) throw errors.invalidEmailCode();
       // Primeiro o corte (commit), depois a revogação: um refresh concorrente ou
       // vê o corte e é recusado, ou já gravou o token novo e a revogação o pega.
       await updatePasswordAndCutSessions(db, user.id, await hashPassword(input.newPassword));
@@ -203,10 +274,14 @@ export function createAuthService(deps: {
       return toPublicUser(user);
     },
 
-    async authenticate(accessToken: string): Promise<string> {
-      const userId = await accessTokens.verify(accessToken);
-      if (!userId) throw errors.unauthenticated();
-      return userId;
+    // Toda requisição autenticada confere o usuário no banco: bloqueio e
+    // "derrubar sessões" valem na hora, sem esperar o access token vencer.
+    async authenticate(accessToken: string): Promise<AuthContext> {
+      const token = await accessTokens.verify(accessToken);
+      if (!token) throw errors.unauthenticated();
+      const user = await findUserById(db, token.userId);
+      if (!user || user.disabledAt || issuedBeforeCut(user, token.issuedAtMs)) throw errors.unauthenticated();
+      return { userId: user.id, role: user.role };
     },
   };
 }

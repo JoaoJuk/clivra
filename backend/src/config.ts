@@ -50,6 +50,8 @@ const envSchema = z.object({
   SMTP_USER: z.string().optional().transform((value) => value || undefined).pipe(z.email().optional()),
   SMTP_PASS: z.string().optional().transform((value) => value || undefined),
   MAIL_FROM: z.string().optional().transform((value) => value || undefined),
+  // Endereço do app citado no e-mail de convite (opcional).
+  APP_URL: z.string().optional().transform((value) => value || undefined).pipe(z.url({ protocol: /^https?$/ }).optional()),
   ACCESS_TOKEN_TTL_SECONDS: z.coerce.number().int().positive().default(900),
   REFRESH_TOKEN_TTL_DAYS: z.coerce.number().int().positive().default(30),
 });

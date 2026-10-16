@@ -11,10 +11,12 @@ import type { Database } from './db/client.js';
 import { errors } from './lib/errors.js';
 import { newId } from './lib/ids.js';
 import { serializeErrorSafely } from './lib/log.js';
-import { createAuthGuard } from './plugins/auth-guard.js';
+import { createAdminGuard, createAuthGuard } from './plugins/auth-guard.js';
 import { registerErrorHandler } from './plugins/error-handler.js';
+import { adminRoutes } from './routes/admin.js';
 import { authRoutes } from './routes/auth.js';
 import { healthRoutes } from './routes/health.js';
+import { createAdminService } from './services/admin.js';
 import { createAuthService } from './services/auth.js';
 import { createEmailCodeService } from './services/email-codes.js';
 import { createSmtpMailer, type Mailer } from './services/mailer.js';
@@ -121,9 +123,17 @@ export async function buildApp(config: Config, database: Database, overrides: { 
     emailCodes,
   });
   const requireAuth = createAuthGuard(auth);
+  const requireAdmin = createAdminGuard(requireAuth);
+  const admin = createAdminService({
+    db: database.db,
+    mailer,
+    appUrl: config.APP_URL,
+    onBackgroundError: (error) => app.log.error({ err: error }, 'falha ao enviar e-mail de convite'),
+  });
 
   await app.register(healthRoutes, { database });
   await app.register(authRoutes, { auth, requireAuth, cookieSecure: config.COOKIE_SECURE });
+  await app.register(adminRoutes, { admin, requireAdmin });
 
   return app;
 }

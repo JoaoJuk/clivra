@@ -45,6 +45,10 @@ export const errors = {
       { field: 'emailCode', issue: 'invalid_or_expired' },
     ]),
   emailDisabled: () => new AppError(503, 'SERVICE_UNAVAILABLE', 'O envio de e-mail não está configurado no servidor.'),
+  accountDisabled: () => new AppError(403, 'FORBIDDEN', 'Sua conta está bloqueada. Fale com o administrador.'),
+  adminOnly: () => new AppError(403, 'FORBIDDEN', 'Acesso restrito ao administrador.'),
+  emailTaken: () => new AppError(409, 'CONFLICT', 'Já existe uma conta com este e-mail.'),
+  cannotChangeSelf: () => new AppError(422, 'UNPROCESSABLE', 'Você não pode fazer isso com a sua própria conta.'),
   notFound: () => new AppError(404, 'NOT_FOUND', 'Recurso não encontrado.'),
   rateLimited: (retryAfterSeconds?: number) =>
     new AppError(429, 'RATE_LIMITED', 'Muitas tentativas. Aguarde um pouco e tente de novo.', undefined, retryAfterSeconds),

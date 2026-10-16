@@ -8,7 +8,10 @@ da própria pasta (tabela da §5). Leia este arquivo inteiro antes de começar.
 
 PWA pessoal de controle de gastos de cartão (Nubank e Itaú), instalado na tela
 inicial do iPhone (Safari → Compartilhar → Adicionar à Tela de Início). Sem App
-Store. **Um único usuário.**
+Store. **Uso em família (D16):** um **admin** (quem instalou) e familiares
+que ele **convida**. Cada pessoa vê **só os próprios** cartões e gastos; o
+painel do admin mostra só dados de conta (quem tem acesso, convites,
+bloqueio), nunca gastos dos outros.
 
 Fluxo: a compra entra no app (colar o texto da notificação, Atalhos do iOS ou
 lançamento manual) → categoria automática → se não houver certeza, **pergunta em

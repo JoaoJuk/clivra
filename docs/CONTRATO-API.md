@@ -1,6 +1,6 @@
 # CONTRATO DA API — v1
 
-**Versão:** 1.0.3 · **Data:** 2026-10-16 · **Status:** ✅ ESTÁVEL — o front-end pode implementar contra isto.
+**Versão:** 1.0.4 · **Data:** 2026-10-16 · **Status:** ✅ ESTÁVEL — o front-end pode implementar contra isto.
 
 > Este arquivo é o **contrato** entre back-end (Claude) e front-end (ChatGPT).
 > Nenhum lado adivinha nada. Mudança que quebra compatibilidade exige acordo dos
@@ -61,9 +61,23 @@ Toda rota — exceto as de `/v1/auth/*` (menos `me`) e `/v1/health` — exige:
 Authorization: Bearer <accessToken>
 ```
 
+### Família: admin e convites (1.0.4)
+- A **primeira conta** do app vira `role: "admin"` e exige `setupCode`.
+- Depois dela, **só e-mail convidado pelo admin** cria conta
+  (`role: "member"`), sempre com `emailCode`. Convite vale 7 dias.
+- Cada usuário só vê os próprios dados: toda rota de recurso filtra pelo
+  usuário do token. O admin **não** vê dados financeiros dos outros (§17).
+- Conta bloqueada pelo admin: o login responde `403 FORBIDDEN` (só depois da
+  senha certa) e qualquer token dela passa a dar `401` **na hora**.
+
+### `GET /v1/auth/registration` (adição 1.0.4)
+Pública. Diz qual tela de cadastro mostrar.
+Response `200`: `{ "mode": "owner_setup" }` (ninguém cadastrado: mostrar o
+campo **Código de configuração**) ou `{ "mode": "invite_only" }` (esconder o
+campo; explicar que é preciso convite do admin).
+
 ### `POST /v1/auth/register`
-Cria o usuário. **Só funciona se não existir nenhum usuário ainda** (app de 1
-pessoa). Depois disso retorna `403 REGISTRATION_CLOSED`.
+Cria o admin (primeira conta) ou um familiar convidado.
 
 Request:
 ```json
@@ -78,8 +92,13 @@ Request:
   (`POST /v1/auth/email-code` com `purpose: "register"`). **Obrigatório quando
   o servidor envia e-mail** (produção); sem e-mail configurado, é ignorado.
   Ausente/malformado/errado/expirado ⇒ `400 INVALID_EMAIL_CODE`.
-- Ordem das checagens: `REGISTRATION_CLOSED` → `FORBIDDEN` (setupCode) →
-  `INVALID_EMAIL_CODE`.
+- Primeira conta — ordem das checagens: `FORBIDDEN` (setupCode) →
+  `INVALID_EMAIL_CODE`. Dois cadastros de admin ao mesmo tempo: o segundo
+  leva `403 REGISTRATION_CLOSED`.
+- Depois do admin: `setupCode` é ignorado. E-mail sem convite ativo ⇒
+  `400 INVALID_EMAIL_CODE` (o código nunca foi enviado) — vale também para
+  e-mail que já tem conta, para não revelar quem está cadastrado (`409
+  CONFLICT` só numa corrida rara). Servidor sem e-mail ⇒ `403 REGISTRATION_CLOSED`.
 
 Response `201`: igual ao do login.
 
@@ -108,7 +127,9 @@ Response `202`:
   5 por dia) devolve o **mesmo `202` sem enviar nada** — o front mostra uma
   contagem regressiva no botão "Reenviar código".
 - Com `password_reset`, a resposta é **sempre `202`**, exista ou não conta com
-  esse e-mail (não revela quem está cadastrado).
+  esse e-mail (não revela quem está cadastrado). Conta bloqueada não recebe.
+- Com `register` depois do admin, também **sempre `202`**: o código só é
+  enviado se o e-mail tiver convite ativo (não revela quem foi convidado).
 - Servidor sem e-mail configurado ⇒ `503 SERVICE_UNAVAILABLE`.
 - Rate limit: 5 por 15 min por IP.
 
@@ -138,11 +159,14 @@ Response `200`:
   "accessToken": "eyJhbGciOi...",
   "refreshToken": "eyJhbGciOi...",
   "expiresIn": 900,
-  "user": { "id": "018f...", "email": "voce@exemplo.com", "name": "João" }
+  "user": { "id": "018f...", "email": "voce@exemplo.com", "name": "João", "role": "admin" }
 }
 ```
 - `expiresIn`: segundos até o `accessToken` expirar.
+- `user.role` (adição 1.0.4): `"admin"` ou `"member"`. Só o admin vê o
+  painel de família (§17).
 - Credencial errada → `401 INVALID_CREDENTIALS`.
+- Conta bloqueada (senha certa) → `403 FORBIDDEN`.
 
 > **Adição 1.0.1 (retrocompatível):** `register`, `login` e `refresh` também
 > gravam o refresh token no cookie `clivra_rt` (`HttpOnly; SameSite=Strict;
@@ -161,7 +185,7 @@ Request: `{ "refreshToken": "eyJ..." }` → Response `204`. Invalida o refresh.
 ### `GET /v1/auth/me`
 Response `200`:
 ```json
-{ "id": "018f...", "email": "voce@exemplo.com", "name": "João", "createdAt": "2026-10-10T12:00:00Z" }
+{ "id": "018f...", "email": "voce@exemplo.com", "name": "João", "role": "admin", "createdAt": "2026-10-10T12:00:00Z" }
 ```
 
 ### `GET /v1/health`
@@ -198,7 +222,7 @@ Use para o indicador de online/offline.
 | 401 | `INVALID_CREDENTIALS` | E-mail ou senha errados. |
 | 401 | `INVALID_REFRESH_TOKEN` | Ir para o login. |
 | 403 | `FORBIDDEN` | Sem permissão. |
-| 403 | `REGISTRATION_CLOSED` | Já existe usuário cadastrado. |
+| 403 | `REGISTRATION_CLOSED` | Cadastro fechado (corrida de dois admins, servidor sem e-mail, ou produção sem código de configuração). |
 | 404 | `NOT_FOUND` | Recurso inexistente. |
 | 409 | `CONFLICT` | Conflito genérico (ex.: e-mail já existe). |
 | 409 | `DUPLICATE_TRANSACTION` | Transação já existe (dedupe). Ver §6.3. |
@@ -1034,7 +1058,65 @@ escritos para serem copiáveis direto.
 
 ---
 
+## 17. Painel do admin (adição 1.0.4)
+
+Todas exigem token de **admin**: sem token `401`, `member` `403 FORBIDDEN`.
+**Nenhuma devolve dado financeiro** — só dados de conta. `:id` que não é UUID
+⇒ `400 VALIDATION_ERROR`; UUID inexistente ⇒ `404`.
+
+### `GET /v1/admin/users`
+Response `200`:
+```json
+{ "data": [ {
+  "id": "018f...", "email": "filha@familia.com", "name": "Ana", "role": "member",
+  "createdAt": "2026-10-16T12:00:00Z", "lastLoginAt": "2026-10-16T18:00:00Z",
+  "disabledAt": null, "activeSessions": 2
+} ] }
+```
+- `lastLoginAt`: último cadastro, login ou renovação de sessão (`null` = nunca).
+- `activeSessions`: aparelhos com sessão aberta.
+
+### `POST /v1/admin/users/:id/disable` → `204`
+Bloqueia: a pessoa sai de todos os aparelhos na hora e não consegue entrar.
+O próprio admin ⇒ `422 UNPROCESSABLE`. Id inexistente ⇒ `404`.
+
+### `POST /v1/admin/users/:id/enable` → `204`
+Desbloqueia (a pessoa entra de novo com a senha dela; sessões antigas
+continuam derrubadas). `disable`/`enable` são idempotentes (repetir dá `204`).
+O próprio admin ⇒ `422 UNPROCESSABLE`.
+
+### `POST /v1/admin/users/:id/revoke-sessions` → `204`
+Desconecta todos os aparelhos da pessoa (vale para o próprio admin). Ela
+continua podendo entrar com a senha.
+
+### `GET /v1/admin/invites`
+Convites pendentes (não aceitos, não revogados, não vencidos).
+Response `200`: `{ "data": [ { "id": "018f...", "email": "filha@familia.com", "createdAt": "...", "expiresAt": "..." } ] }`
+
+### `POST /v1/admin/invites`
+Request: `{ "email": "filha@familia.com" }` → Response `201` com o convite.
+Envia um e-mail de convite (sem nenhum dado financeiro). Convidar de novo o
+mesmo e-mail substitui o convite anterior. E-mail que já tem conta ⇒
+`409 CONFLICT`. Servidor sem e-mail ⇒ `503`. Rate limit: 20 por hora.
+
+### `DELETE /v1/admin/invites/:id` → `204`
+Revoga o convite. Já usado/revogado/vencido ou inexistente ⇒ `404`.
+
+---
+
 ## Changelog
+
+### 1.0.4 — 2026-10-16
+- **Família (D16):** a primeira conta vira admin; depois só entra quem o admin
+  convidar. `user.role` em login/register/refresh/me.
+- §1: `GET /v1/auth/registration`; regras novas de `register` e `email-code`;
+  login de conta bloqueada ⇒ `403 FORBIDDEN`.
+- §17: painel do admin (usuários, bloquear, desconectar, convites).
+- Bloqueio, troca de senha e "desconectar" derrubam também o access token na
+  hora (antes valia até 15 min).
+- Mudança de comportamento: depois do admin, `register` sem convite não dá
+  mais `403 REGISTRATION_CLOSED` (dá `400 INVALID_EMAIL_CODE`). Produção não
+  tinha conta, então nada quebrou de fato.
 
 ### 1.0.3 — 2026-10-16
 - §1: `POST /v1/auth/email-code` (código de 6 dígitos por e-mail) e
