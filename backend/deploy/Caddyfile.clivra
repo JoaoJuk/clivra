@@ -1,0 +1,12 @@
+# Bloco acrescentado ao /etc/caddy/Caddyfile da VPS (os outros sites não mudam).
+# Sem diretiva `log`: o Caddy não grava access log desta API (P4).
+clivra-api.163-176-182-24.sslip.io {
+	request_body {
+		max_size 6MB
+	}
+	header {
+		-Server
+		Strict-Transport-Security "max-age=31536000"
+	}
+	reverse_proxy 127.0.0.1:3333
+}

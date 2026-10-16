@@ -1,0 +1,39 @@
+# /etc/systemd/system/clivra.service — API do CLIVRA na VPS Oracle.
+[Unit]
+Description=CLIVRA API
+After=network.target postgresql.service
+Requires=postgresql.service
+
+[Service]
+Type=simple
+User=clivra
+Group=clivra
+EnvironmentFile=/etc/clivra/clivra.env
+WorkingDirectory=/opt/clivra/current
+ExecStart=/opt/node/bin/node dist/server.js
+Restart=on-failure
+RestartSec=3
+
+# Isolamento: o processo não escreve em disco, não vê /home, não ganha privilégio.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+SystemCallArchitectures=native
+MemoryMax=768M
+
+[Install]
+WantedBy=multi-user.target
