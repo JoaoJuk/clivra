@@ -35,6 +35,8 @@ sozinhas no boot (`src/server.ts`).
   `/var/backups/clivra` (14 dias, mesmo disco — não protege contra perda da VPS).
 - **Segredos:** `/etc/clivra/clivra.env` (root, 0600), gerados na própria VPS.
   Código do primeiro cadastro: `ssh oracle sudo grep OWNER_SETUP_CODE /etc/clivra/clivra.env`.
+- **E-mail:** SMTP do Gmail (`SMTP_USER`/`SMTP_PASS` no `clivra.env`, senha de
+  app). Portas 465/587 de saída liberadas na VPS.
 - **Caddy:** bloco próprio no `/etc/caddy/Caddyfile` (`deploy/Caddyfile.clivra`);
   o site `163-176-182-24.sslip.io` (painel do usuário) **não é nosso — não mexer**.
 - **Limites Always Free:** disco de 200 GB já é o total grátis (não criar
@@ -85,6 +87,10 @@ src/db/        queries Drizzle; uma função por operação; recebe `db: Db`
 | Parser JSON seguro (bloqueia `__proto__`), body ≤ 64 KB | `app.ts` |
 | Log sem query string, corpo, cookie, Authorization (P4) | `app.ts` (serializers) |
 | Um único dono garantido no banco | `db/schema.ts` (`users_single_owner_key`) |
+| Código por e-mail: HMAC no banco, 10 min, uso único, 5 tentativas por código (atômico), 60 s entre envios e 5/dia (advisory lock), códigos anteriores seguem válidos (anti-bloqueio) | `services/email-codes.ts`, `db/email-codes.ts` |
+| "Esqueci a senha" responde antes de consultar o banco (não revela conta nem por tempo) | `services/auth.ts` (`requestEmailCode`) |
+| Troca de senha: `sessions_valid_after` + revogação; `refresh` confere o corte **depois** de gravar o token novo (sem corrida) | `services/auth.ts` (`resetPassword`, `refresh`) |
+| Produção não sobe sem SMTP (senão o cadastro dispensaria o código) | `config.ts` |
 
 ## Status e próximos passos
 

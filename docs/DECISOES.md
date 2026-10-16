@@ -10,7 +10,7 @@ histórico completo (discussões, pendências já resolvidas) está no git:
 
 | Tela | Front (ChatGPT) | Back (Claude) | Produção |
 |---|---|---|---|
-| Login / Criar conta | ✅ | ✅ | ✅ testado no iPhone |
+| Login / Criar conta | ✅ (falta P-18) | ✅ + código por e-mail | ✅ testado no iPhone |
 | Cartões | ✅ com mock | ⬜ **próxima** | — |
 | Lançar compra (colar / manual) | ✅ com mock | ⬜ | — |
 | Transações | ✅ com mock | ⬜ | — |
@@ -33,6 +33,7 @@ histórico completo (discussões, pendências já resolvidas) está no git:
 | D10 | Captura no iPhone | Colar texto + Atalhos do iOS → `POST /v1/ingest/raw`. Sem Open Finance, e-mail ou OCR de print |
 | D11 | Categorização | Regra aprendida → dicionário local → **Jev** → pergunta (detalhe abaixo) |
 | D12 | Hospedagem | Vercel (PWA + proxy `/v1/*`) + VPS **Oracle Always Free** (API + Postgres) em `clivra-api.163-176-182-24.sslip.io`. Sessão em cookie `HttpOnly` |
+| D14 | Código por e-mail | Código de 6 dígitos no **Criar conta** (prova que o e-mail é seu antes de a conta existir) e no **Esqueci a senha**. Envio por SMTP do Gmail `clivra.net@gmail.com` com senha de app (grátis, ~500/dia), segredo em `/etc/clivra/clivra.env`. **SMS descartado** (pago, fere P6). O e-mail leva só o código (P4) |
 | D13 | Infra da VPS | Node 24 e Postgres 16 nativos (sem Docker), systemd com sandbox, Caddy, backup diário local. Ver `backend/CLAUDE.md` |
 
 Substituídas: D2 "sem LLM" (→ D11); D3, D4, D8 e D9 "Cloudflare Tunnel" (→ D12/D13).
@@ -67,6 +68,20 @@ Entram no contrato como **v1.1.0** (só adições) quando o ChatGPT confirmar.
 
 ## Pendências abertas
 
+### P-18 — Telas do código por e-mail (ChatGPT)
+Contrato 1.0.3, §1. Back pronto e em produção.
+1. **Criar conta:** depois do formulário, `POST /v1/auth/email-code`
+   (`purpose: "register"`, com `setupCode`); tela "Digite o código enviado para
+   <e-mail>" (6 dígitos, `inputmode="numeric"`, `autocomplete="one-time-code"`)
+   → `POST /v1/auth/register` com `emailCode`. Botão "Reenviar" com contagem
+   de `resendIn` segundos. `INVALID_EMAIL_CODE` ⇒ mensagem + reenviar.
+2. **Login:** link "Esqueci minha senha" → e-mail → `POST /v1/auth/email-code`
+   (`purpose: "password_reset"`) → código + nova senha →
+   `POST /v1/auth/password-reset` → `204` ⇒ volta ao login com aviso
+   "Senha alterada. Entre com a nova senha."
+3. Sempre dizer "Se houver conta com esse e-mail, enviamos um código" no
+   esqueci a senha (o back não revela se a conta existe).
+
 ### P-16 — Segurança do front, itens restantes (ChatGPT)
 Os itens 1–2 (rewrite `/v1` e headers de segurança no `vercel.json`) e a P-14
 (campo de código no Criar conta) **já foram feitos pelo Claude**, com autorização
@@ -93,7 +108,10 @@ O front já usa só o cookie. Remover o campo do corpo de `login`/`register`/
 `refresh` (contrato v2.0.0) depois que o ChatGPT confirmar que não depende dele.
 
 ### Riscos aceitos
-- O access token vale até 15 min depois do logout (app de 1 pessoa).
+- O access token vale até 15 min depois do logout **e da troca de senha** (app de 1 pessoa).
+- "Esqueci a senha" tem teto de 5 códigos/dia por e-mail: quem souber seu
+  e-mail pode gastar o teto, mas os códigos chegam na **sua** caixa e qualquer
+  um ainda válido serve. Saída de emergência: `ssh oracle`.
 - O backup do banco fica no mesmo disco da VPS. Futuro: cópia no Object Storage
   grátis da Oracle (20 GB).
 - A Oracle desliga VPS ociosa por 7 dias (CPU, rede e memória < 20%); ela avisa

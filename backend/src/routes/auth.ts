@@ -3,18 +3,35 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { errors } from '../lib/errors.js';
 import type { AuthService, Session } from '../services/auth.js';
+import { EMAIL_CODE_RESEND_SECONDS, EMAIL_CODE_TTL_SECONDS } from '../services/email-codes.js';
 
 export const REFRESH_COOKIE = 'clivra_rt';
 
 const email = z.string().trim().toLowerCase().pipe(z.email().max(254));
+// Formato não é validado aqui: código malformado dá INVALID_EMAIL_CODE no
+// serviço, igual a código errado (contrato §1).
+const emailCode = z.string().trim().max(32);
+const newPassword = z.string().min(8).max(128);
 
 const registerBody = z.object({
   email,
-  password: z.string().min(8).max(128),
+  password: newPassword,
   name: z.string().trim().min(1).max(80),
   // Exigido quando o servidor tem OWNER_SETUP_CODE (sempre em produção).
   setupCode: z.string().max(200).optional(),
+  // Exigido quando o servidor envia e-mail (SMTP configurado).
+  emailCode: emailCode.optional(),
 });
+
+const emailCodeBody = z.object({
+  email,
+  purpose: z.enum(['register', 'password_reset']),
+  setupCode: z.string().max(200).optional(),
+});
+
+const emailCodeResponse = z.object({ expiresIn: z.number().int(), resendIn: z.number().int() });
+
+const passwordResetBody = z.object({ email, emailCode, newPassword });
 
 const loginBody = z.object({
   email,
@@ -72,6 +89,32 @@ export async function authRoutes(app: FastifyInstance, opts: AuthRouteOptions): 
       config: { rateLimit: { max: 5, timeWindow: '1 hour' } },
     },
     async (request, reply) => sendSession(reply, await auth.register(request.body), 201),
+  );
+
+  r.post(
+    '/v1/auth/email-code',
+    {
+      schema: { body: emailCodeBody, response: { 202: emailCodeResponse } },
+      config: { rateLimit: { max: 5, timeWindow: '15 minutes' } },
+    },
+    async (request, reply) => {
+      await auth.requestEmailCode(request.body);
+      return reply.status(202).send({ expiresIn: EMAIL_CODE_TTL_SECONDS, resendIn: EMAIL_CODE_RESEND_SECONDS });
+    },
+  );
+
+  r.post(
+    '/v1/auth/password-reset',
+    {
+      schema: { body: passwordResetBody },
+      config: { rateLimit: { max: 10, timeWindow: '15 minutes' } },
+    },
+    async (request, reply) => {
+      await auth.resetPassword(request.body);
+      // A sessão deste aparelho também caiu: o front volta para o login.
+      reply.clearCookie(REFRESH_COOKIE, cookieOptions);
+      return reply.status(204).send();
+    },
   );
 
   r.post(

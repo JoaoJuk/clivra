@@ -6,6 +6,7 @@ export type ErrorCode =
   | 'INVALID_REFRESH_TOKEN'
   | 'FORBIDDEN'
   | 'REGISTRATION_CLOSED'
+  | 'INVALID_EMAIL_CODE'
   | 'NOT_FOUND'
   | 'CONFLICT'
   | 'DUPLICATE_TRANSACTION'
@@ -39,6 +40,11 @@ export const errors = {
   invalidRefreshToken: () => new AppError(401, 'INVALID_REFRESH_TOKEN', 'Sua sessão expirou. Entre novamente.'),
   invalidSetupCode: () => new AppError(403, 'FORBIDDEN', 'Código de configuração inválido.'),
   registrationClosed: () => new AppError(403, 'REGISTRATION_CLOSED', 'Já existe uma conta cadastrada neste app.'),
+  invalidEmailCode: () =>
+    new AppError(400, 'INVALID_EMAIL_CODE', 'Código inválido ou expirado. Peça um novo código.', [
+      { field: 'emailCode', issue: 'invalid_or_expired' },
+    ]),
+  emailDisabled: () => new AppError(503, 'SERVICE_UNAVAILABLE', 'O envio de e-mail não está configurado no servidor.'),
   notFound: () => new AppError(404, 'NOT_FOUND', 'Recurso não encontrado.'),
   rateLimited: (retryAfterSeconds?: number) =>
     new AppError(429, 'RATE_LIMITED', 'Muitas tentativas. Aguarde um pouco e tente de novo.', undefined, retryAfterSeconds),

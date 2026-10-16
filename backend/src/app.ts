@@ -15,6 +15,8 @@ import { registerErrorHandler } from './plugins/error-handler.js';
 import { authRoutes } from './routes/auth.js';
 import { healthRoutes } from './routes/health.js';
 import { createAuthService } from './services/auth.js';
+import { createEmailCodeService } from './services/email-codes.js';
+import { createSmtpMailer, type Mailer } from './services/mailer.js';
 import { createAccessTokens } from './services/tokens.js';
 
 // Mensagens de validação do Zod em português (o contrato pede `message` em pt-BR).
@@ -34,7 +36,8 @@ const logger: FastifyServerOptions['logger'] = {
   },
 };
 
-export async function buildApp(config: Config, database: Database) {
+// `mailer` permite trocar o SMTP por um falso nos testes.
+export async function buildApp(config: Config, database: Database, overrides: { mailer?: Mailer } = {}) {
   const trustedHops = config.TRUST_PROXY;
   const app = Fastify({
     logger: config.NODE_ENV === 'test' ? false : logger,
@@ -88,12 +91,32 @@ export async function buildApp(config: Config, database: Database) {
   });
 
   const accessTokens = createAccessTokens(config.JWT_SECRET, config.ACCESS_TOKEN_TTL_SECONDS);
+  const mailer =
+    overrides.mailer ??
+    (config.SMTP_USER && config.SMTP_PASS
+      ? createSmtpMailer({
+          host: config.SMTP_HOST,
+          port: config.SMTP_PORT,
+          user: config.SMTP_USER,
+          pass: config.SMTP_PASS,
+          from: config.MAIL_FROM ?? `Clivra <${config.SMTP_USER}>`,
+        })
+      : undefined);
+  const emailCodes = mailer
+    ? createEmailCodeService({
+        db: database.db,
+        mailer,
+        secret: config.JWT_SECRET,
+        onBackgroundError: (error) => app.log.error({ err: error }, 'falha ao gerar/enviar código por e-mail'),
+      })
+    : undefined;
   const auth = createAuthService({
     db: database.db,
     accessTokens,
     refreshTtlDays: config.REFRESH_TOKEN_TTL_DAYS,
     ownerSetupCode: config.OWNER_SETUP_CODE,
     production: config.NODE_ENV === 'production',
+    emailCodes,
   });
   const requireAuth = createAuthGuard(auth);
 

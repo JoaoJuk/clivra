@@ -1,11 +1,12 @@
 import { buildApp } from '../src/app.js';
 import { loadConfig } from '../src/config.js';
 import { connectPglite } from '../src/db/client.js';
+import type { Mailer } from '../src/services/mailer.js';
 
 export const TEST_ORIGIN = 'http://localhost:5173';
 
 // App novo com banco Postgres em memória — cada teste começa do zero.
-export async function createTestApp(env: Record<string, string> = {}) {
+export async function createTestApp(env: Record<string, string> = {}, overrides: { mailer?: Mailer } = {}) {
   const config = loadConfig({
     NODE_ENV: 'test',
     JWT_SECRET: 'test-secret-that-is-long-enough-for-hs256-signing',
@@ -14,9 +15,10 @@ export async function createTestApp(env: Record<string, string> = {}) {
   });
   const database = connectPglite('memory://');
   await database.migrate();
-  const app = await buildApp(config, database);
+  const app = await buildApp(config, database, overrides);
   return {
     app,
+    database,
     async close() {
       await app.close();
       await database.close();

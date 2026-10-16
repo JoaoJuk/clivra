@@ -43,6 +43,13 @@ const envSchema = z.object({
     .optional()
     .transform((value) => value || undefined)
     .pipe(z.string().min(16, 'OWNER_SETUP_CODE precisa ter pelo menos 16 caracteres.').optional()),
+  // E-mail (código de cadastro e "esqueci a senha"). Sem SMTP_USER/SMTP_PASS o
+  // envio fica desligado. Gmail: senha de app, não a senha da conta.
+  SMTP_HOST: z.string().default('smtp.gmail.com'),
+  SMTP_PORT: z.coerce.number().int().min(1).max(65535).default(465),
+  SMTP_USER: z.string().optional().transform((value) => value || undefined).pipe(z.email().optional()),
+  SMTP_PASS: z.string().optional().transform((value) => value || undefined),
+  MAIL_FROM: z.string().optional().transform((value) => value || undefined),
   ACCESS_TOKEN_TTL_SECONDS: z.coerce.number().int().positive().default(900),
   REFRESH_TOKEN_TTL_DAYS: z.coerce.number().int().positive().default(30),
 });
@@ -57,11 +64,16 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   }
 
   const config = parsed.data;
+  if (Boolean(config.SMTP_USER) !== Boolean(config.SMTP_PASS)) {
+    throw new Error('Configuração inválida no .env: preencha SMTP_USER e SMTP_PASS juntos (ou nenhum dos dois).');
+  }
   if (config.NODE_ENV === 'production') {
     if (!config.COOKIE_SECURE) throw new Error('Em produção, COOKIE_SECURE precisa ser true.');
     if (!config.DATABASE_URL) throw new Error('Em produção, DATABASE_URL é obrigatório (PGlite é só para dev).');
     // A porta do Node só escuta local; quem fala com a internet é o Caddy.
     if (!loopbackHosts.has(config.HOST)) throw new Error('Em produção, HOST precisa ser 127.0.0.1 (atrás do Caddy).');
+    // Sem SMTP o cadastro dispensaria o código de e-mail: falha fechado.
+    if (!config.SMTP_USER) throw new Error('Em produção, SMTP_USER e SMTP_PASS são obrigatórios.');
   }
   return config;
 }

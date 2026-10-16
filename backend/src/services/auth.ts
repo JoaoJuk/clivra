@@ -1,10 +1,17 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import type { Db } from '../db/client.js';
-import { findRefreshTokenByHash, insertRefreshToken, revokeFamily, revokeIfActive } from '../db/refresh-tokens.js';
+import {
+  findRefreshTokenByHash,
+  insertRefreshToken,
+  revokeAllForUser,
+  revokeFamily,
+  revokeIfActive,
+} from '../db/refresh-tokens.js';
 import type { UserRow } from '../db/schema.js';
-import { findUserByEmail, findUserById, hasAnyUser, insertOwner } from '../db/users.js';
+import { findUserByEmail, findUserById, hasAnyUser, insertOwner, updatePasswordAndCutSessions } from '../db/users.js';
 import { errors } from '../lib/errors.js';
 import { newId, toIso } from '../lib/ids.js';
+import type { EmailCodeService } from './email-codes.js';
 import { LoginThrottle } from './login-throttle.js';
 import { burnPasswordCheck, hashPassword, verifyPassword } from './passwords.js';
 import { type AccessTokens, hashRefreshToken, newRefreshToken } from './tokens.js';
@@ -46,6 +53,9 @@ export function createAuthService(deps: {
   // undefined + produção = cadastro fechado; undefined fora de produção = sem código.
   ownerSetupCode: string | undefined;
   production: boolean;
+  // undefined = sem SMTP configurado: cadastro sem código de e-mail e sem
+  // "esqueci a senha".
+  emailCodes: EmailCodeService | undefined;
 }) {
   const { db, accessTokens } = deps;
   const refreshTtlMs = deps.refreshTtlDays * 24 * 60 * 60 * 1000;
@@ -72,15 +82,30 @@ export function createAuthService(deps: {
     };
   }
 
+  async function assertCanRegister(setupCode: string | undefined): Promise<void> {
+    if (await hasAnyUser(db)) throw errors.registrationClosed();
+    if (deps.ownerSetupCode) {
+      if (!setupCode || !sameSecret(setupCode, deps.ownerSetupCode)) throw errors.invalidSetupCode();
+    } else if (deps.production) {
+      throw errors.registrationClosed();
+    }
+  }
+
   return {
     refreshTtlMs,
+    emailCodesEnabled: deps.emailCodes !== undefined,
 
-    async register(input: { email: string; password: string; name: string; setupCode?: string | undefined }): Promise<Session> {
-      if (await hasAnyUser(db)) throw errors.registrationClosed();
-      if (deps.ownerSetupCode) {
-        if (!input.setupCode || !sameSecret(input.setupCode, deps.ownerSetupCode)) throw errors.invalidSetupCode();
-      } else if (deps.production) {
-        throw errors.registrationClosed();
+    async register(input: {
+      email: string;
+      password: string;
+      name: string;
+      setupCode?: string | undefined;
+      emailCode?: string | undefined;
+    }): Promise<Session> {
+      await assertCanRegister(input.setupCode);
+      if (deps.emailCodes) {
+        if (!input.emailCode) throw errors.invalidEmailCode();
+        await deps.emailCodes.consume(input.email, 'register', input.emailCode);
       }
       const passwordHash = await hashPassword(input.password);
       try {
@@ -125,7 +150,46 @@ export function createAuthService(deps: {
       if (row.expiresAt <= now) throw errors.invalidRefreshToken();
       const user = await findUserById(db, row.userId);
       if (!user) throw errors.invalidRefreshToken();
-      return issueSession(user, row.familyId);
+      const session = await issueSession(user, row.familyId);
+      // Conferido DEPOIS de gravar o token novo (ver resetPassword): sessão
+      // anterior a uma troca de senha cai, mesmo em corrida com a troca.
+      const fresh = await findUserById(db, row.userId);
+      if (!fresh || (fresh.sessionsValidAfter && row.createdAt < fresh.sessionsValidAfter)) {
+        await revokeFamily(db, row.familyId, new Date());
+        throw errors.invalidRefreshToken();
+      }
+      return session;
+    },
+
+    // Envia o código de 6 dígitos. Para "esqueci a senha" a resposta é a mesma
+    // exista ou não a conta (não revela qual e-mail está cadastrado).
+    async requestEmailCode(input: {
+      email: string;
+      purpose: 'register' | 'password_reset';
+      setupCode?: string | undefined;
+    }): Promise<void> {
+      if (!deps.emailCodes) throw errors.emailDisabled();
+      if (input.purpose === 'register') {
+        await assertCanRegister(input.setupCode);
+        await deps.emailCodes.issue(input.email, 'register');
+        return;
+      }
+      deps.emailCodes.issueInBackground(input.email, 'password_reset', async () =>
+        Boolean(await findUserByEmail(db, input.email)),
+      );
+    },
+
+    // Troca a senha com o código do e-mail e derruba todas as sessões abertas.
+    async resetPassword(input: { email: string; emailCode: string; newPassword: string }): Promise<void> {
+      if (!deps.emailCodes) throw errors.emailDisabled();
+      await deps.emailCodes.consume(input.email, 'password_reset', input.emailCode);
+      const user = await findUserByEmail(db, input.email);
+      if (!user) throw errors.invalidEmailCode();
+      // Primeiro o corte (commit), depois a revogação: um refresh concorrente ou
+      // vê o corte e é recusado, ou já gravou o token novo e a revogação o pega.
+      await updatePasswordAndCutSessions(db, user.id, await hashPassword(input.newPassword));
+      await revokeAllForUser(db, user.id, new Date());
+      throttlePerAccount.reset(input.email);
     },
 
     async logout(refreshToken: string): Promise<void> {

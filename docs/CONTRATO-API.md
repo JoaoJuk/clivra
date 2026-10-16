@@ -1,6 +1,6 @@
 # CONTRATO DA API — v1
 
-**Versão:** 1.0.0 · **Data:** 2026-10-10 · **Status:** ✅ ESTÁVEL — o front-end pode implementar contra isto.
+**Versão:** 1.0.3 · **Data:** 2026-10-16 · **Status:** ✅ ESTÁVEL — o front-end pode implementar contra isto.
 
 > Este arquivo é o **contrato** entre back-end (Claude) e front-end (ChatGPT).
 > Nenhum lado adivinha nada. Mudança que quebra compatibilidade exige acordo dos
@@ -56,7 +56,7 @@ JWT Bearer. Access token curto + refresh token longo.
 | `accessToken` | **15 minutos** | memória / variável (não localStorage) |
 | `refreshToken` | **30 dias** | `localStorage` (é PWA de 1 usuário) |
 
-Toda rota — exceto as 3 abaixo e `/v1/health` — exige:
+Toda rota — exceto as de `/v1/auth/*` (menos `me`) e `/v1/health` — exige:
 ```
 Authorization: Bearer <accessToken>
 ```
@@ -74,8 +74,58 @@ Request:
 - `setupCode` (adição 1.0.2): código de configuração definido no servidor.
   **Obrigatório em produção** — impede que um estranho crie a conta antes do
   dono. Ausente/errado ⇒ `403 FORBIDDEN`. Em dev local pode não ser exigido.
+- `emailCode` (adição 1.0.3): código de 6 dígitos recebido por e-mail
+  (`POST /v1/auth/email-code` com `purpose: "register"`). **Obrigatório quando
+  o servidor envia e-mail** (produção); sem e-mail configurado, é ignorado.
+  Ausente/malformado/errado/expirado ⇒ `400 INVALID_EMAIL_CODE`.
+- Ordem das checagens: `REGISTRATION_CLOSED` → `FORBIDDEN` (setupCode) →
+  `INVALID_EMAIL_CODE`.
 
 Response `201`: igual ao do login.
+
+**Fluxo da tela Criar conta (1.0.3):** (1) usuário preenche nome, e-mail,
+senha e código de configuração → `POST /v1/auth/email-code`; (2) a tela pede
+o código de 6 dígitos → `POST /v1/auth/register` com tudo + `emailCode`.
+
+### `POST /v1/auth/email-code` (adição 1.0.3)
+Envia um código de **6 dígitos** por e-mail. Vale **10 min** e **uma vez só**.
+Pedir outro **não** invalida o anterior: qualquer código ainda válido serve, e
+usar um encerra os demais.
+
+Request:
+```json
+{ "email": "voce@exemplo.com", "purpose": "register", "setupCode": "..." }
+```
+- `purpose`: `"register"` (Criar conta) ou `"password_reset"` (Esqueci a senha).
+- `setupCode`: obrigatório com `purpose: "register"` em produção (mesmas
+  regras do `register`: `403 FORBIDDEN` / `403 REGISTRATION_CLOSED`).
+
+Response `202`:
+```json
+{ "expiresIn": 600, "resendIn": 60 }
+```
+- `resendIn`: segundos até poder pedir outro. Pedido antes disso (ou acima de
+  5 por dia) devolve o **mesmo `202` sem enviar nada** — o front mostra uma
+  contagem regressiva no botão "Reenviar código".
+- Com `password_reset`, a resposta é **sempre `202`**, exista ou não conta com
+  esse e-mail (não revela quem está cadastrado).
+- Servidor sem e-mail configurado ⇒ `503 SERVICE_UNAVAILABLE`.
+- Rate limit: 5 por 15 min por IP.
+
+### `POST /v1/auth/password-reset` (adição 1.0.3)
+Troca a senha com o código recebido (`purpose: "password_reset"`).
+
+Request:
+```json
+{ "email": "voce@exemplo.com", "emailCode": "123456", "newPassword": "novasenha123" }
+```
+Response `204`. **Todas as sessões são encerradas** (inclusive a deste
+aparelho — o cookie é apagado): o front manda para o login. Um `accessToken`
+já emitido ainda vale até expirar (no máximo 15 min), como no logout.
+- Código malformado/errado/expirado/já usado, ou 5 tentativas erradas ⇒ `400 INVALID_EMAIL_CODE`.
+- `newPassword`: mínimo 8 caracteres.
+- Servidor sem e-mail configurado ⇒ `503 SERVICE_UNAVAILABLE`.
+- Rate limit: 10 por 15 min por IP.
 
 ### `POST /v1/auth/login`
 Request:
@@ -143,6 +193,7 @@ Use para o indicador de online/offline.
 | HTTP | `code` | Significado / ação do front |
 |---|---|---|
 | 400 | `VALIDATION_ERROR` | Payload inválido. Mostrar `details` no formulário. |
+| 400 | `INVALID_EMAIL_CODE` | Código do e-mail errado, expirado ou já usado. Oferecer "Reenviar código". |
 | 401 | `UNAUTHENTICATED` | Sem token / token expirado. **Tentar refresh, depois login.** |
 | 401 | `INVALID_CREDENTIALS` | E-mail ou senha errados. |
 | 401 | `INVALID_REFRESH_TOKEN` | Ir para o login. |
@@ -154,7 +205,7 @@ Use para o indicador de online/offline.
 | 422 | `UNPROCESSABLE` | Válido sintaticamente, impossível semanticamente. |
 | 429 | `RATE_LIMITED` | Header `Retry-After` em segundos. |
 | 500 | `INTERNAL_ERROR` | Erro nosso. Mostrar "tente de novo". |
-| 503 | `SERVICE_UNAVAILABLE` | Banco fora / manutenção. |
+| 503 | `SERVICE_UNAVAILABLE` | Banco fora / manutenção / envio de e-mail não configurado. |
 
 ---
 
@@ -984,6 +1035,15 @@ escritos para serem copiáveis direto.
 ---
 
 ## Changelog
+
+### 1.0.3 — 2026-10-16
+- §1: `POST /v1/auth/email-code` (código de 6 dígitos por e-mail) e
+  `POST /v1/auth/password-reset` (esqueci a senha).
+- §1 `register`: campo `emailCode`, obrigatório quando o servidor envia e-mail.
+  Não afeta a produção atual (a conta do dono já existe), mas a tela Criar
+  conta precisa do passo do código — ver `DECISOES.md` P-18.
+- §2: código `400 INVALID_EMAIL_CODE`.
+- Produção exige e-mail configurado (o servidor não sobe sem SMTP).
 
 ### 1.0.2 — 2026-10-16
 - §1 `register`: campo opcional `setupCode`, exigido em produção

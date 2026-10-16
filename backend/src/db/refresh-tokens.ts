@@ -31,3 +31,11 @@ export async function revokeFamily(db: Db, familyId: string, now: Date): Promise
     .set({ revokedAt: now })
     .where(and(eq(refreshTokens.familyId, familyId), isNull(refreshTokens.revokedAt)));
 }
+
+// Derruba todas as sessões do usuário (ex.: depois de trocar a senha).
+export async function revokeAllForUser(db: Db, userId: string, now: Date): Promise<void> {
+  await db
+    .update(refreshTokens)
+    .set({ revokedAt: now })
+    .where(and(eq(refreshTokens.userId, userId), isNull(refreshTokens.revokedAt)));
+}

@@ -12,6 +12,8 @@ const prodEnv = {
   DATABASE_URL: 'postgres://nao-usado-no-teste',
   COOKIE_SECURE: 'true',
   HOST: '127.0.0.1',
+  SMTP_USER: 'app@exemplo.com',
+  SMTP_PASS: 'senha-de-app-falsa',
 };
 
 describe('primeiro cadastro (ninguém da internet vira dono)', () => {
@@ -67,6 +69,9 @@ describe('configuração de produção', () => {
 
   test('cookie sem Secure é recusado em produção', () => {
     assert.throws(() => loadConfig({ ...prodEnv, COOKIE_SECURE: 'false' }), /COOKIE_SECURE/);
+    // Sem SMTP o cadastro dispensaria o código de e-mail.
+    assert.throws(() => loadConfig({ ...prodEnv, SMTP_USER: '', SMTP_PASS: '' }), /SMTP/);
+    assert.throws(() => loadConfig({ ...prodEnv, SMTP_PASS: '' }), /SMTP/);
   });
 });
 

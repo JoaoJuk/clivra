@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import type { Db } from './client.js';
 import { users, type UserRow } from './schema.js';
 
@@ -24,4 +24,10 @@ export async function insertOwner(
   const [row] = await db.insert(users).values(input).returning();
   if (!row) throw new Error('insert em users não retornou linha');
   return row;
+}
+
+// Troca a senha e marca o corte das sessões com o relógio do banco (o mesmo
+// que preenche refresh_tokens.created_at).
+export async function updatePasswordAndCutSessions(db: Db, id: string, passwordHash: string): Promise<void> {
+  await db.update(users).set({ passwordHash, sessionsValidAfter: sql`now()` }).where(eq(users.id, id));
 }
