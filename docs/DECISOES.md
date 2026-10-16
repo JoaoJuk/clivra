@@ -10,7 +10,8 @@ histórico completo (discussões, pendências já resolvidas) está no git:
 
 | Tela | Front (ChatGPT) | Back (Claude) | Produção |
 |---|---|---|---|
-| Login / Criar conta | ✅ + código por e-mail | ✅ + código por e-mail | ⏳ testar na homologação (prod sem conta) |
+| Login / Criar conta | ✅ + código por e-mail + convite | ✅ + família (D16) | ⏳ homologação: admin criado; falta testar convite |
+| Painel admin (D16) | ✅ (Claude, autorizado) | ✅ | ⏳ testar na homologação |
 | Cartões | ✅ com mock | ⬜ **próxima** | — |
 | Lançar compra (colar / manual) | ✅ com mock | ⬜ | — |
 | Transações | ✅ com mock | ⬜ | — |
@@ -29,7 +30,7 @@ histórico completo (discussões, pendências já resolvidas) está no git:
 | D1 | Bancos da v1 | Nubank e Itaú |
 | D5 | Autenticação | E-mail + senha + código por e-mail. O 1º cadastro (o admin) exige o código de configuração (`OWNER_SETUP_CODE`, guardado na VPS) |
 | D17 | Categorias por pessoa | Lista **padrão** (contrato §4) para todos **+ categorias próprias** que cada pessoa cria, renomeia e apaga — visíveis só para ela. Regras aprendidas (P2) também são por pessoa. Entra com a tela Cartões/Categorias (exige mudança no contrato §4, acordada com o front). Decidido pelo humano em 2026-10-16 |
-| D16 | Família | Um **admin** (quem instalou) e familiares **convidados** por ele (`member`). Sem cadastro aberto. **Gastos separados:** cada um vê só os seus. O painel do admin mostra só dados de conta (usuários, convites, último acesso, aparelhos, bloquear/desconectar) — nunca gastos dos outros. Decidido pelo humano em 2026-10-16 |
+| D16 | Família | Um **admin** (quem instalou) e familiares **convidados** por ele (`member`). Sem cadastro aberto. **Mesmas telas para todos; gastos separados:** cada um vê só os seus. O admin tem a mais o **Painel admin** (seção no topo de Ajustes): saúde do sistema (ambiente, API, versão, último backup), pessoas (último acesso, aparelhos, bloquear/desconectar) e convites — nunca gastos dos outros. A homologação é só do admin (login da Vercel + banco próprio). Decidido pelo humano em 2026-10-16 |
 | D6 | Categorias | ~~Lista fechada~~ → substituída pela D17 |
 | D7 | Melhorias | M1 parcelamento, M2 assinaturas, M3 orçamento, M4 dedupe, M5 estorno, M6 export — todas aceitas |
 | D10 | Captura no iPhone | Colar texto + Atalhos do iOS → `POST /v1/ingest/raw`. Sem Open Finance, e-mail ou OCR de print |
@@ -71,8 +72,13 @@ Entram no contrato como **v1.1.0** (só adições) quando o ChatGPT confirmar.
 
 ## Pendências abertas
 
-### P-20 — Família: cadastro por convite e painel do admin (ChatGPT)
-Contrato 1.0.4 (§1 e §17). Back pronto (homologação).
+### P-20 — Família: cadastro por convite e painel do admin — ✅ feito pelo Claude
+O **Claude fez as telas com autorização do humano** (2026-10-16):
+`ui/AdminPanel.tsx` (novo), `SettingsPage.tsx`, `AuthView.tsx`
+(`registrationMode`), `App.tsx`, `lib/api.ts`, `lib/types.ts`,
+`lib/sessionStorage.ts` (`role`), `styles.css`, `tests/admin.spec.ts` e
+`tests/helpers.ts` (mock das rotas admin). ChatGPT: revise se quiser.
+Registro do que foi pedido:
 1. **Criar conta:** chamar `GET /v1/auth/registration`. `owner_setup` ⇒
    mostrar o campo Código de configuração (como hoje). `invite_only` ⇒
    esconder o campo e mostrar "Para criar conta, peça um convite ao

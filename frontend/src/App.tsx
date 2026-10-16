@@ -11,6 +11,17 @@ import { prunePendingData } from './lib/pendingStore';
 import { AppView } from './ui/AppView';
 import { AuthView } from './ui/AuthView';
 import type { AppViewActions, TransactionFilters as ViewTransactionFilters, ViewName } from './ui/types';
+import type { AdminApi } from './ui/AdminPanel';
+
+// Referência estável: o painel recarrega quando a api muda.
+const adminApi: AdminApi = {
+  system: () => api.adminSystem(),
+  users: () => api.adminUsers(),
+  invites: () => api.adminInvites(),
+  invite: (email) => api.adminInvite(email),
+  revokeInvite: (id) => api.adminRevokeInvite(id),
+  userAction: (id, action) => api.adminUserAction(id, action),
+};
 
 function currentMonthInSaoPaulo(): string {
   const parts = new Intl.DateTimeFormat('en-US', {
@@ -239,7 +250,17 @@ export function App() {
     }).catch((error) => setActionError(errorMessage(error)));
   }, [authenticated, offline, answerQuestion, pushCheckVersion]);
 
+  // Tela de cadastro: com código de configuração (1ª conta, o admin) ou só convite.
+  const [registrationMode, setRegistrationMode] = useState<'owner_setup' | 'invite_only'>('invite_only');
+  useEffect(() => {
+    if (!ready || user) return;
+    let active = true;
+    api.registrationMode().then((result) => { if (active) setRegistrationMode(result.mode); }).catch(() => undefined);
+    return () => { active = false; };
+  }, [ready, user]);
+
   const actions: AppViewActions = {
+    ...(user?.role === 'admin' && !offline ? { admin: adminApi } : {}),
     onAnswerQuestion: answerQuestion,
     onCreateCard: async (input: CreateCardInput) => {
       setActionError(null);
@@ -329,6 +350,7 @@ export function App() {
     onSubmit={handleAuth}
     onRequestCode={(input) => api.emailCode(input)}
     onResetPassword={(input) => api.resetPassword(input)}
+    registrationMode={registrationMode}
     loading={false}
     error={actionError}
   />;

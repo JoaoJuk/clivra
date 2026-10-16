@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import type { AppViewActions, AppViewData, ImportStatementSummary, ViewName } from "./types";
 import { Icon } from "./Icon";
+import { AdminPanel } from "./AdminPanel";
 
 interface SettingsPageProps {
   data?: AppViewData;
@@ -46,7 +47,7 @@ export function SettingsPage({ data, actions, onPaste, setNotice }: SettingsPage
   }
 
   return <div className="page settings-page"><div className="page-heading"><div><p className="eyebrow">DO SEU JEITO</p><h1>Seu espaço, <em>suas escolhas.</em></h1><p>Gerencie sua conta, notificações e os dados do app.</p></div></div>
-    <div className="settings-grid"><div className="settings-main"><section className="surface settings-section"><div className="settings-section-heading"><span className="settings-heading-icon"><Icon name="shield" size={20} /></span><div><h2>Sua conta</h2><p>Informações de acesso</p></div></div><div className="profile-row"><span className="profile-avatar">{data?.user?.name?.trim().charAt(0).toUpperCase() || "C"}</span><div><strong>{data?.user?.name || "Sua conta"}</strong><span>{data?.user?.email || ""}</span></div></div></section>
+    <div className="settings-grid"><div className="settings-main">{data?.user?.role === "admin" && actions?.admin && <AdminPanel api={actions.admin} currentUserId={data.user.id} offline={data.offline} setNotice={setNotice} />}<section className="surface settings-section"><div className="settings-section-heading"><span className="settings-heading-icon"><Icon name="shield" size={20} /></span><div><h2>Sua conta</h2><p>Informações de acesso</p></div></div><div className="profile-row"><span className="profile-avatar">{data?.user?.name?.trim().charAt(0).toUpperCase() || "C"}</span><div><strong>{data?.user?.name || "Sua conta"}</strong><span>{data?.user?.email || ""}</span></div></div></section>
 
       <section className="surface settings-section"><div className="settings-section-heading"><span className="settings-heading-icon"><Icon name="bell" size={20} /></span><div><h2>Notificações</h2><p>Saiba quando uma compra precisar de você</p></div></div><div className="settings-action-row"><div><strong>Alertas de categorias</strong><span>{data?.pushEnabled ? "Ativados neste aparelho" : "Receba avisos para classificar compras"}</span></div>{data?.pushEnabled ? <button type="button" className="button button-outline" disabled={!actions?.onDisablePush || data?.offline || busy !== null} onClick={() => run("push", actions?.onDisablePush, "Notificações desativadas.")}>{busy === "push" ? "Aguarde..." : "Desativar"}</button> : <button type="button" className="button button-primary" disabled={!actions?.onEnablePush || data?.offline || busy !== null} onClick={() => run("push", actions?.onEnablePush, "Notificações ativadas.")}>{busy === "push" ? "Aguarde..." : "Ativar"}</button>}</div>{data?.pushEnabled && actions?.onTestPush && <button type="button" className="settings-link" disabled={data?.offline || busy !== null} onClick={() => run("test", actions?.onTestPush, "Notificação de teste enviada.")}><Icon name="bell" size={18} /> Enviar notificação de teste <Icon name="arrowRight" size={17} /></button>}</section>
 

@@ -36,6 +36,9 @@ sozinhas no boot (`src/server.ts`).
   `sudo systemctl restart clivra`.
 - **Serviço:** `clivra.service` (usuário `clivra`, sandbox systemd, só
   `127.0.0.1:3333`). Logs: `sudo journalctl -u clivra`.
+- **Saúde no painel admin:** o `deploy.sh` grava `release.json` (versão +
+  ambiente) na release; o backup diário grava a data em
+  `/var/lib/clivra/last-backup`. `GET /v1/admin/system` lê os dois.
 - **Banco:** Postgres 16 local, só socket/localhost, role `clivra` por peer
   auth (sem senha). Backup diário `/etc/cron.daily/clivra-backup` →
   `/var/backups/clivra` (14 dias, mesmo disco — não protege contra perda da VPS).

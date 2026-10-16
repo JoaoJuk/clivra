@@ -18,6 +18,7 @@ import { authRoutes } from './routes/auth.js';
 import { healthRoutes } from './routes/health.js';
 import { createAdminService } from './services/admin.js';
 import { createAuthService } from './services/auth.js';
+import { createSystemService } from './services/system.js';
 import { createEmailCodeService } from './services/email-codes.js';
 import { createSmtpMailer, type Mailer } from './services/mailer.js';
 import { createAccessTokens } from './services/tokens.js';
@@ -133,7 +134,7 @@ export async function buildApp(config: Config, database: Database, overrides: { 
 
   await app.register(healthRoutes, { database });
   await app.register(authRoutes, { auth, requireAuth, cookieSecure: config.COOKIE_SECURE });
-  await app.register(adminRoutes, { admin, requireAdmin });
+  await app.register(adminRoutes, { admin, system: createSystemService({ database }), requireAdmin });
 
   return app;
 }

@@ -2,7 +2,8 @@ export const userStorageKey = 'cartao.lastUser';
 export const logoutStorageKey = 'cartao.logoutVersion';
 const offlineStorageKey = 'cartao.offlineSession.v2';
 export const offlineMaxAge = 24 * 60 * 60 * 1000;
-export type SessionUser = { id: string; name: string; email?: string };
+// `role` só existe na sessão online; o cache offline guarda só id e nome.
+export type SessionUser = { id: string; name: string; email?: string; role?: 'admin' | 'member' };
 
 export function readStorage(key: string): string | null {
   try { return localStorage.getItem(key); } catch { return null; }

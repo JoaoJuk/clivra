@@ -33,7 +33,11 @@ rm -rf dist && npm run build
 
 RELEASE="$(git rev-parse --short HEAD)-$(date -u +%Y%m%d%H%M%S)"
 TARBALL="$(mktemp -d)/clivra-$RELEASE.tgz"
-tar -czf "$TARBALL" dist drizzle package.json package-lock.json
+# Versão e ambiente que o painel do admin mostra (GET /v1/admin/system).
+printf '{"release":"%s","environment":"%s"}
+' "$RELEASE" "$TARGET" > release.json
+tar -czf "$TARBALL" dist drizzle package.json package-lock.json release.json
+rm -f release.json
 scp -q "$TARBALL" oracle:/tmp/clivra-release.tgz
 rm -f "$TARBALL"
 

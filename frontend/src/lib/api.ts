@@ -1,4 +1,6 @@
 import type {
+  AdminInvite,
+  AdminUser,
   ApiErrorBody,
   AuthSession,
   Card,
@@ -13,6 +15,7 @@ import type {
   Question,
   Rule,
   Summary,
+  SystemStatus,
   Transaction,
   User,
 } from './types';
@@ -152,6 +155,24 @@ export class ApiClient {
   async resetPassword(input: { email: string; emailCode: string; newPassword: string }): Promise<void> {
     await this.request<void>('/v1/auth/password-reset', { method: 'POST', body: JSON.stringify(input) }, false);
     this.clearSession(true);
+  }
+
+  registrationMode(): Promise<{ mode: 'owner_setup' | 'invite_only' }> {
+    return this.request('/v1/auth/registration', {}, false);
+  }
+
+  // Painel admin (contrato §17).
+  adminSystem(): Promise<SystemStatus> { return this.request('/v1/admin/system'); }
+  adminUsers(): Promise<{ data: AdminUser[] }> { return this.request('/v1/admin/users'); }
+  adminInvites(): Promise<{ data: AdminInvite[] }> { return this.request('/v1/admin/invites'); }
+  adminInvite(email: string): Promise<AdminInvite> {
+    return this.request('/v1/admin/invites', { method: 'POST', body: JSON.stringify({ email }) });
+  }
+  async adminRevokeInvite(id: string): Promise<void> {
+    await this.request<void>(`/v1/admin/invites/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  }
+  async adminUserAction(id: string, action: 'disable' | 'enable' | 'revoke-sessions'): Promise<void> {
+    await this.request<void>(`/v1/admin/users/${encodeURIComponent(id)}/${action}`, { method: 'POST' });
   }
 
   async request<T>(path: string, init: RequestInit = {}, authenticated = true, retry = true): Promise<T> {

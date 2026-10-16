@@ -16,7 +16,8 @@ const newPassword = z.string().min(8).max(128);
 const registerBody = z.object({
   email,
   password: newPassword,
-  name: z.string().trim().min(1).max(80),
+  // Sem quebra de linha/caracteres de controle: o nome aparece nas confirmações do painel admin.
+  name: z.string().trim().min(1).max(80).regex(/^[^\p{Cc}]+$/u, 'O nome não pode ter quebras de linha.'),
   // Exigido quando o servidor tem OWNER_SETUP_CODE (sempre em produção).
   setupCode: z.string().max(200).optional(),
   // Exigido quando o servidor envia e-mail (SMTP configurado).

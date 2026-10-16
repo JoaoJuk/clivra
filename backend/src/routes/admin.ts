@@ -2,6 +2,7 @@ import type { ZodTypeProvider } from '@fastify/type-provider-zod';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { AdminService } from '../services/admin.js';
+import type { SystemService } from '../services/system.js';
 
 const email = z.string().trim().toLowerCase().pipe(z.email().max(254));
 const idParams = z.object({ id: z.uuid() });
@@ -20,14 +21,29 @@ const adminUser = z.object({
 
 const adminInvite = z.object({ id: z.string(), email: z.string(), createdAt: z.string(), expiresAt: z.string() });
 
+const systemStatus = z.object({
+  environment: z.enum(['production', 'staging', 'development']),
+  release: z.string(),
+  startedAt: z.string(),
+  database: z.enum(['ok', 'error']),
+  lastBackupAt: z.string().nullable(),
+});
+
 interface AdminRouteOptions {
   admin: AdminService;
+  system: SystemService;
   requireAdmin: (request: FastifyRequest) => Promise<void>;
 }
 
 export async function adminRoutes(app: FastifyInstance, opts: AdminRouteOptions): Promise<void> {
-  const { admin, requireAdmin } = opts;
+  const { admin, system, requireAdmin } = opts;
   const r = app.withTypeProvider<ZodTypeProvider>();
+
+  r.get(
+    '/v1/admin/system',
+    { schema: { response: { 200: systemStatus } }, preHandler: requireAdmin },
+    async () => system.status(),
+  );
 
   r.get(
     '/v1/admin/users',

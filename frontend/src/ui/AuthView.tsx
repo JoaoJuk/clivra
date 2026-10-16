@@ -10,6 +10,9 @@ export interface AuthViewProps {
   onSubmit: (mode: AuthMode, payload: AuthPayload) => Promise<void> | void;
   onRequestCode: (input: { email: string; purpose: "register" | "password_reset"; setupCode?: string }) => Promise<{ resendIn: number }>;
   onResetPassword: (input: { email: string; emailCode: string; newPassword: string }) => Promise<void>;
+  // owner_setup = ninguém cadastrado ainda (pede o código de configuração);
+  // invite_only = só quem recebeu convite do admin (contrato 1.0.4).
+  registrationMode?: "owner_setup" | "invite_only";
   loading?: boolean;
   error?: string | null;
   offlineAvailable?: boolean;
@@ -55,7 +58,8 @@ const copy: Record<AuthStep, { title: string; description: (email: string) => st
   reset: { title: "Defina uma nova senha.", description: () => "Se houver conta com esse e-mail, enviamos um código. Use-o abaixo para alterar sua senha.", submit: "Alterar senha" },
 };
 
-export function AuthView({ onSubmit, onRequestCode, onResetPassword, loading = false, error, offlineAvailable, onOpenOffline }: AuthViewProps) {
+export function AuthView({ onSubmit, onRequestCode, onResetPassword, registrationMode = "invite_only", loading = false, error, offlineAvailable, onOpenOffline }: AuthViewProps) {
+  const ownerSetup = registrationMode === "owner_setup";
   const [step, setStep] = useState<AuthStep>("login");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -85,7 +89,7 @@ export function AuthView({ onSubmit, onRequestCode, onResetPassword, loading = f
   }
 
   async function requestCode(purpose: "register" | "password_reset") {
-    const result = await onRequestCode({ email: email.trim(), purpose, ...(purpose === "register" ? { setupCode: setupCode.trim() } : {}) });
+    const result = await onRequestCode({ email: email.trim(), purpose, ...(purpose === "register" && ownerSetup ? { setupCode: setupCode.trim() } : {}) });
     setNow(Date.now());
     setResendAt(Date.now() + result.resendIn * 1000);
   }
@@ -112,7 +116,7 @@ export function AuthView({ onSubmit, onRequestCode, onResetPassword, loading = f
     await run(async () => {
       if (step === "login") await onSubmit("login", { email: email.trim(), password });
       else if (step === "register") { await requestCode("register"); setStep("register-code"); }
-      else if (step === "register-code") await onSubmit("register", { email: email.trim(), password, name: name.trim(), setupCode: setupCode.trim(), emailCode });
+      else if (step === "register-code") await onSubmit("register", { email: email.trim(), password, name: name.trim(), ...(ownerSetup ? { setupCode: setupCode.trim() } : {}), emailCode });
       else if (step === "forgot") { await requestCode("password_reset"); setPassword(""); setStep("reset"); }
       else {
         await onResetPassword({ email: email.trim(), emailCode, newPassword: password });
@@ -138,7 +142,7 @@ export function AuthView({ onSubmit, onRequestCode, onResetPassword, loading = f
           <div className="auth-intro">
             <span className="auth-section-label">ACESSO À CONTA</span>
             <h1 id="auth-title">{text.title}</h1>
-            <p>{text.description(email.trim())}</p>
+            <p>{step === "register" && !ownerSetup ? "Use o e-mail que recebeu o convite do administrador." : text.description(email.trim())}</p>
           </div>
 
           <form onSubmit={submit} className="auth-form">
@@ -165,7 +169,7 @@ export function AuthView({ onSubmit, onRequestCode, onResetPassword, loading = f
               </label>
             )}
             {step === "login" && <button type="button" className="auth-link auth-link-end" onClick={() => goTo("forgot")}>Esqueci minha senha</button>}
-            {step === "register" && (
+            {step === "register" && ownerSetup && (
               <label className="auth-field">
                 <span>Código de configuração</span>
                 <input value={setupCode} onChange={(event) => setSetupCode(event.target.value)} autoComplete="off" autoCapitalize="off" autoCorrect="off" spellCheck={false} placeholder="Fornecido na instalação do servidor" />

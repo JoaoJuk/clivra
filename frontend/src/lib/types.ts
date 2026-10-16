@@ -6,7 +6,36 @@ export interface User {
   id: string;
   email: string;
   name: string;
+  // Contrato 1.0.4: só o admin vê o painel admin.
+  role?: 'admin' | 'member';
   createdAt?: IsoDateTime;
+}
+
+// Painel admin (contrato §17): só dados de conta, nunca gastos de outra pessoa.
+export interface AdminUser {
+  id: string;
+  email: string;
+  name: string;
+  role: 'admin' | 'member';
+  createdAt: IsoDateTime;
+  lastLoginAt: IsoDateTime | null;
+  disabledAt: IsoDateTime | null;
+  activeSessions: number;
+}
+
+export interface AdminInvite {
+  id: string;
+  email: string;
+  createdAt: IsoDateTime;
+  expiresAt: IsoDateTime;
+}
+
+export interface SystemStatus {
+  environment: 'production' | 'staging' | 'development';
+  release: string;
+  startedAt: IsoDateTime;
+  database: 'ok' | 'error';
+  lastBackupAt: IsoDateTime | null;
 }
 
 export interface AuthSession {

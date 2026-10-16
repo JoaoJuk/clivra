@@ -5,6 +5,40 @@ Os comandos aqui estão prontos para copiar e colar.
 
 ---
 
+## 0. Como o app funciona para a família
+
+- **Todo mundo usa o mesmo app** (https://clivra-puce.vercel.app), com as
+  mesmas telas. Cada pessoa tem a própria conta e vê **só os próprios**
+  cartões, gastos e categorias. Ninguém vê os dados de ninguém, **nem você**.
+- **Você é o admin.** A sua conta tem a mais o **Painel admin**, no topo de
+  **Ajustes**. Os outros não veem esse painel.
+- **Ninguém se cadastra sozinho.** Só entra quem você convidar pelo painel.
+- **A homologação é só sua.** Ela é o app de testes. A família não entra
+  nela: o link exige o seu login da Vercel e o banco é separado.
+
+### Painel admin (Ajustes → Painel admin)
+
+| Parte | O que mostra / faz |
+|---|---|
+| **Sistema** | Ambiente (Produção/Homologação), se a API está no ar, versão publicada e data do último backup |
+| **Pessoas** | Quem tem conta, último acesso e em quantos aparelhos está. **Desconectar** tira a pessoa de todos os aparelhos (ela entra de novo com a senha). **Bloquear** tira e impede de entrar até você desbloquear |
+| **Convites** | Convites pendentes (com **Revogar**) e o campo **Convidar por e-mail** |
+
+### Convidar alguém da família
+1. Ajustes → Painel admin → **Convidar por e-mail** → digite o e-mail → **Enviar convite**.
+2. A pessoa recebe um e-mail de `clivra.net@gmail.com`.
+3. Ela abre o app, toca em **Criar conta** e usa **esse mesmo e-mail**. Não
+   aparece campo de código de configuração para ela.
+4. Ela recebe um código de 6 dígitos, confirma e já entra.
+
+O convite vale 7 dias. Se vencer, é só convidar de novo.
+
+### Se perder o celular ou desconfiar de algo
+Painel admin → na sua linha (ou na da pessoa) → **Desconectar**. Todos os
+aparelhos saem na hora. Depois, troque a senha em "Esqueci minha senha".
+
+---
+
 ## 1. Abrir o Git Bash
 
 Os comandos de deploy são escritos para o **Git Bash**. Ele já está instalado
@@ -32,7 +66,8 @@ direito do mouse ou `Shift+Insert`.
 | API (back) | `clivra-api-hml.163-176-182-24.sslip.io` | `clivra-api.163-176-182-24.sslip.io` |
 | Banco de dados | `clivra_hml`, só dados de teste | `clivra`, seus dados reais |
 | Segredos (na VPS) | `/etc/clivra/clivra-hml.env` | `/etc/clivra/clivra.env` |
-| Código de configuração do 1º cadastro | um próprio | um próprio |
+| Código de configuração (só para criar a conta do admin) | um próprio | um próprio |
+| Quem entra | só você | você e quem você convidar |
 
 Os dois ambientes ficam na mesma VPS, mas um não enxerga o outro: cada um tem
 seu próprio usuário Linux, seu banco e seus segredos. Uma falha na homologação
@@ -85,12 +120,15 @@ bash deploy/deploy.sh prod
 O **front** é publicado sozinho pela Vercel: um push em `develop` gera o
 *Preview* e um push em `main` atualiza a produção.
 
-### Ver o código de configuração (para criar a conta)
+### Copiar o código de configuração (só para criar a conta do admin)
 ```bash
-ssh oracle "sudo grep OWNER_SETUP_CODE /etc/clivra/clivra-hml.env"   # homologação
-ssh oracle "sudo grep OWNER_SETUP_CODE /etc/clivra/clivra.env"       # produção
+ssh oracle "sudo grep OWNER_SETUP_CODE /etc/clivra/clivra-hml.env" | cut -d= -f2- | tr -d '\r\n' | clip   # homologação
+ssh oracle "sudo grep OWNER_SETUP_CODE /etc/clivra/clivra.env" | cut -d= -f2- | tr -d '\r\n' | clip       # produção
 ```
-O código aparece só no seu terminal. Não cole em nenhum chat.
+Não aparece nada na tela: o código vai direto para a área de transferência.
+Passe para o celular por um canal só seu (WhatsApp "você mesmo", rascunho de
+e-mail) e apague depois. Não cole em nenhum chat. Os familiares nunca
+precisam dele.
 
 ### O sistema está no ar?
 ```bash
@@ -134,5 +172,11 @@ ssh oracle "sudo ls -lh /var/backups/clivra"
 | Decisões e pendências entre os agentes | `docs/DECISOES.md` |
 | Formato da API | `docs/CONTRATO-API.md` |
 
-*Em breve, neste guia: a tela **Segurança** do app (aparelhos conectados,
-histórico de acesso, saúde do sistema e alerta por e-mail).*
+## 5. Cuidados com a rede
+
+Se a rede onde você está tiver um firewall que inspeciona HTTPS (em
+2026-10-16 vimos isso no PC: um **Fortinet** trocando o certificado), quem
+administra essa rede pode, em tese, ver o que passa por ela. Para dados
+financeiros, use **4G/5G ou o Wi-Fi de casa**.
+
+*Em breve, neste guia: alerta por e-mail de login em aparelho novo.*

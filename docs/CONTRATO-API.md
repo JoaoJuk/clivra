@@ -1060,9 +1060,27 @@ escritos para serem copiáveis direto.
 
 ## 17. Painel do admin (adição 1.0.4)
 
+O front mostra estas rotas como o **Painel admin**, uma seção no topo de
+Ajustes que só aparece com `user.role === "admin"`.
+
 Todas exigem token de **admin**: sem token `401`, `member` `403 FORBIDDEN`.
 **Nenhuma devolve dado financeiro** — só dados de conta. `:id` que não é UUID
 ⇒ `400 VALIDATION_ERROR`; UUID inexistente ⇒ `404`.
+
+### `GET /v1/admin/system` (saúde do sistema)
+Response `200`:
+```json
+{ "environment": "production", "release": "5802a0b-20261016215754",
+  "startedAt": "2026-10-16T21:57:58Z", "database": "ok",
+  "lastBackupAt": "2026-10-17T06:25:01Z" }
+```
+- `environment`: `production` | `staging` (homologação) | `development`.
+- `release`: versão publicada (commit + data do deploy); `"dev"` rodando local.
+- `startedAt`: quando a API iniciou (UTC, sem milissegundos, como em §0).
+- `database`: `ok` | `error`. Banco com problema **continua `200`** com
+  `"error"` — não é erro de rede.
+- `lastBackupAt`: último backup diário bem-sucedido; `null` fora da produção,
+  se ainda não houve backup ou se o registro do backup estiver ilegível.
 
 ### `GET /v1/admin/users`
 Response `200`:
@@ -1111,7 +1129,8 @@ Revoga o convite. Já usado/revogado/vencido ou inexistente ⇒ `404`.
   convidar. `user.role` em login/register/refresh/me.
 - §1: `GET /v1/auth/registration`; regras novas de `register` e `email-code`;
   login de conta bloqueada ⇒ `403 FORBIDDEN`.
-- §17: painel do admin (usuários, bloquear, desconectar, convites).
+- §17: painel do admin (saúde do sistema, usuários, bloquear, desconectar,
+  convites).
 - Bloqueio, troca de senha e "desconectar" derrubam também o access token na
   hora (antes valia até 15 min).
 - Mudança de comportamento: depois do admin, `register` sem convite não dá

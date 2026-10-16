@@ -10,6 +10,7 @@ import type {
   User,
   IngestRawResponse,
 } from "../lib/types";
+import type { AdminApi } from "./AdminPanel";
 
 export type ViewName = "dashboard" | "transactions" | "questions" | "cards" | "settings";
 export interface TransactionFilters { search?: string; cardId?: string; status?: string }
@@ -21,7 +22,7 @@ export interface ImportStatementSummary {
 }
 
 export interface AppViewData {
-  user?: (Pick<User, 'id' | 'name'> & Partial<Pick<User, 'email'>>) | null;
+  user?: (Pick<User, 'id' | 'name'> & Partial<Pick<User, 'email' | 'role'>>) | null;
   summary?: Summary | null;
   transactions?: Transaction[];
   questions?: Question[];
@@ -54,6 +55,8 @@ export interface AppViewActions {
   onTestPush?: () => Promise<void> | void;
   onExport?: (format: "csv" | "json") => Promise<void> | void;
   onImportStatement?: (file: File, cardId: string) => Promise<ImportStatementSummary>;
+  // Só existe para o admin (contrato §17).
+  admin?: AdminApi;
 }
 
 export interface AppViewProps {

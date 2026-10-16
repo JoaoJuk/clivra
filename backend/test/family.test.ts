@@ -136,6 +136,14 @@ describe('cadastro em família', () => {
   });
 });
 
+describe('nome no cadastro', () => {
+  test('nome com quebra de linha é recusado', async () => {
+    const res = await post('/v1/auth/register', { ...owner, name: 'Ana\n\n(texto enganoso)', setupCode: SETUP_CODE, emailCode: '123456' });
+    assert.equal(res.statusCode, 400);
+    assert.equal(res.json().error.code, 'VALIDATION_ERROR');
+  });
+});
+
 describe('painel do admin', () => {
   test('sem token 401; member 403; admin vê só dados de conta', async () => {
     const adminToken = await registerAdmin();
@@ -209,6 +217,20 @@ describe('painel do admin', () => {
     assert.equal((await post('/v1/auth/refresh', { refreshToken: m.refreshToken })).statusCode, 401);
     // A pessoa continua podendo entrar de novo com a senha.
     assert.equal((await post('/v1/auth/login', { email: member.email, password: member.password })).statusCode, 200);
+  });
+
+  test('saúde do sistema: só admin, sem dado de usuário', async () => {
+    const adminToken = await registerAdmin();
+    const { accessToken: memberToken } = await inviteAndRegisterMember(adminToken);
+    assert.equal((await get('/v1/admin/system', memberToken)).statusCode, 403);
+    const res = await get('/v1/admin/system', adminToken);
+    assert.equal(res.statusCode, 200);
+    const body = res.json();
+    assert.deepEqual(Object.keys(body).sort(), ['database', 'environment', 'lastBackupAt', 'release', 'startedAt']);
+    assert.equal(body.environment, 'development');
+    assert.equal(body.release, 'dev');
+    assert.equal(body.database, 'ok');
+    assert.equal(body.lastBackupAt, null);
   });
 
   test('admin não bloqueia a si mesmo; id inexistente 404; id inválido 400', async () => {
