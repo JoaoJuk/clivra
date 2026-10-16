@@ -26,3 +26,6 @@ playwright-report/
 # Sistema
 Thumbs.db
 .DS_Store
+
+# Configuração local do Claude Code (por máquina)
+.claude/settings.local.json
