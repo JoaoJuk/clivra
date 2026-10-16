@@ -40,6 +40,7 @@ export function registerErrorHandler(app: FastifyInstance): void {
       appError = new AppError(500, 'INTERNAL_ERROR', 'Algo deu errado do nosso lado. Tente de novo.');
     }
 
+    if (appError.retryAfterSeconds !== undefined) reply.header('retry-after', String(appError.retryAfterSeconds));
     return reply.status(appError.statusCode).send(envelope(appError, request.id));
   });
 

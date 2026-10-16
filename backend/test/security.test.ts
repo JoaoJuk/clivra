@@ -92,6 +92,11 @@ describe('envelope de erro', () => {
 });
 
 describe('cabeçalhos de segurança', () => {
+  test('nenhuma resposta fica em cache (Cache-Control: no-store)', async () => {
+    const res = await ctx.app.inject({ method: 'POST', url: '/v1/auth/register', payload: owner });
+    assert.equal(res.headers['cache-control'], 'no-store');
+  });
+
   test('helmet aplicado', async () => {
     const res = await ctx.app.inject({ method: 'GET', url: '/v1/health' });
     assert.equal(res.headers['x-content-type-options'], 'nosniff');
@@ -132,18 +137,45 @@ describe('força bruta no login', () => {
     assert.ok(Number(blocked.headers['retry-after']) > 0);
   });
 
-  test('por conta: 10 erros na mesma conta bloqueiam mesmo trocando de IP', async () => {
+  test('conta+IP: atacante que errou 10x fica bloqueado, mas o dono em outro IP entra', async () => {
     await ctx.app.inject({ method: 'POST', url: '/v1/auth/register', payload: owner });
     for (let i = 0; i < 10; i++) {
-      const res = await login(owner.email, `10.0.1.${i}`);
+      const res = await ctx.app.inject({
+        method: 'POST',
+        url: '/v1/auth/login',
+        // IPs diferentes por tentativa não importam para o rate limit por IP aqui,
+        // mas o bloqueio conta+IP é por IP: usamos o mesmo do atacante.
+        remoteAddress: '10.6.6.6',
+        payload: { email: owner.email, password: 'chute-errado' },
+      });
       assert.equal(res.statusCode, 401);
     }
-    const blocked = await ctx.app.inject({
+    const attacker = await ctx.app.inject({
       method: 'POST',
       url: '/v1/auth/login',
-      remoteAddress: '10.0.2.1',
+      remoteAddress: '10.6.6.6',
       payload: { email: owner.email, password: owner.password },
     });
-    assert.equal(blocked.statusCode, 429, 'até a senha certa espera o bloqueio passar');
+    assert.equal(attacker.statusCode, 429, 'IP do atacante bloqueado até com a senha certa');
+    const retryAfter = Number(attacker.headers['retry-after']);
+    assert.ok(retryAfter > 0 && retryAfter <= 15 * 60, `Retry-After em segundos (veio ${retryAfter})`);
+
+    const ownerElsewhere = await ctx.app.inject({
+      method: 'POST',
+      url: '/v1/auth/login',
+      remoteAddress: '10.1.1.1',
+      payload: { email: owner.email, password: owner.password },
+    });
+    assert.equal(ownerElsewhere.statusCode, 200, 'dono não fica trancado para fora');
+  });
+
+  test('ataque distribuído: 100 erros na mesma conta, de IPs diferentes, travam a conta', async () => {
+    await ctx.app.inject({ method: 'POST', url: '/v1/auth/register', payload: owner });
+    for (let i = 0; i < 100; i++) {
+      const res = await login(owner.email, `10.9.${Math.floor(i / 250)}.${i % 250}`);
+      assert.equal(res.statusCode, 401);
+    }
+    const blocked = await login(owner.email, '10.9.99.99');
+    assert.equal(blocked.statusCode, 429);
   });
 });

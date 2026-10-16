@@ -67,9 +67,13 @@ pessoa). Depois disso retorna `403 REGISTRATION_CLOSED`.
 
 Request:
 ```json
-{ "email": "voce@exemplo.com", "password": "minhasenha123", "name": "João" }
+{ "email": "voce@exemplo.com", "password": "minhasenha123", "name": "João", "setupCode": "..." }
 ```
 - `password`: mínimo **8** caracteres.
+- `name`: obrigatório, 1–80 caracteres.
+- `setupCode` (adição 1.0.2): código de configuração definido no servidor.
+  **Obrigatório em produção** — impede que um estranho crie a conta antes do
+  dono. Ausente/errado ⇒ `403 FORBIDDEN`. Em dev local pode não ser exigido.
 
 Response `201`: igual ao do login.
 
@@ -980,6 +984,14 @@ escritos para serem copiáveis direto.
 ---
 
 ## Changelog
+
+### 1.0.2 — 2026-10-16
+- §1 `register`: campo opcional `setupCode`, exigido em produção
+  (`403 FORBIDDEN` se ausente/errado). Achado da revisão de segurança: sem
+  ele, quem chamasse o cadastro antes do dono viraria dono.
+- §1 `register`: `name` documentado como obrigatório (1–80).
+- §2: `429 RATE_LIMITED` traz `Retry-After` também no bloqueio por conta.
+- Todas as respostas: `Cache-Control: no-store`.
 
 ### 1.0.1 — 2026-10-16
 - §1: refresh token também em cookie `HttpOnly` `clivra_rt`; `refresh`/`logout`

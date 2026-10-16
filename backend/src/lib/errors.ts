@@ -25,6 +25,8 @@ export class AppError extends Error {
     readonly code: ErrorCode,
     message: string,
     readonly details?: ErrorDetail[],
+    // Vira o header Retry-After (contrato §2, código 429).
+    readonly retryAfterSeconds?: number,
   ) {
     super(message);
     this.name = 'AppError';
@@ -35,8 +37,10 @@ export const errors = {
   unauthenticated: () => new AppError(401, 'UNAUTHENTICATED', 'Sua sessão expirou. Entre novamente.'),
   invalidCredentials: () => new AppError(401, 'INVALID_CREDENTIALS', 'E-mail ou senha incorretos.'),
   invalidRefreshToken: () => new AppError(401, 'INVALID_REFRESH_TOKEN', 'Sua sessão expirou. Entre novamente.'),
+  invalidSetupCode: () => new AppError(403, 'FORBIDDEN', 'Código de configuração inválido.'),
   registrationClosed: () => new AppError(403, 'REGISTRATION_CLOSED', 'Já existe uma conta cadastrada neste app.'),
   notFound: () => new AppError(404, 'NOT_FOUND', 'Recurso não encontrado.'),
-  rateLimited: () => new AppError(429, 'RATE_LIMITED', 'Muitas tentativas. Aguarde um pouco e tente de novo.'),
+  rateLimited: (retryAfterSeconds?: number) =>
+    new AppError(429, 'RATE_LIMITED', 'Muitas tentativas. Aguarde um pouco e tente de novo.', undefined, retryAfterSeconds),
   serviceUnavailable: () => new AppError(503, 'SERVICE_UNAVAILABLE', 'Serviço indisponível no momento. Tente de novo em instantes.'),
 };

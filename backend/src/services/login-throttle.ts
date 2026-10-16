@@ -7,16 +7,28 @@ export class LoginThrottle {
   constructor(
     private readonly maxFailures: number,
     private readonly windowMs: number,
+    // Teto de chaves em memória: um flood de e-mails aleatórios não esgota a RAM.
+    private readonly maxKeys = 10_000,
   ) {}
 
-  isBlocked(key: string, now = Date.now()): boolean {
-    return this.recent(key, now).length >= this.maxFailures;
+  // Segundos até liberar, ou null se não está bloqueado.
+  blockedForSeconds(key: string, now = Date.now()): number | null {
+    const list = this.recent(key, now);
+    if (list.length < this.maxFailures) return null;
+    const releaseAt = (list[list.length - this.maxFailures] ?? now) + this.windowMs;
+    return Math.max(1, Math.ceil((releaseAt - now) / 1000));
   }
 
   recordFailure(key: string, now = Date.now()): void {
     const list = this.recent(key, now);
     list.push(now);
+    this.failures.delete(key);
     this.failures.set(key, list);
+    // Map guarda ordem de inserção: a primeira chave é a mais antiga.
+    if (this.failures.size > this.maxKeys) {
+      const oldest = this.failures.keys().next().value;
+      if (oldest !== undefined) this.failures.delete(oldest);
+    }
   }
 
   reset(key: string): void {

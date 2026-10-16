@@ -5,6 +5,24 @@ const booleanFlag = z
   .optional()
   .transform((value) => value === 'true' || value === '1');
 
+// false | número de saltos de proxy | lista de IPs/CIDRs confiáveis.
+// "true" (confiar em qualquer X-Forwarded-For) não é aceito: deixaria o IP forjável.
+const trustProxy = z
+  .string()
+  .optional()
+  .transform((value, ctx) => {
+    const raw = (value ?? '').trim();
+    if (raw === '' || raw === 'false' || raw === '0') return false;
+    if (/^\d+$/.test(raw)) return Number(raw);
+    if (raw === 'true') {
+      ctx.addIssue({ code: 'custom', message: 'use o número de proxies (ex.: 2) ou a lista de IPs, não "true"' });
+      return z.NEVER;
+    }
+    return raw.split(',').map((ip) => ip.trim()).filter(Boolean);
+  });
+
+const loopbackHosts = new Set(['127.0.0.1', '::1', 'localhost']);
+
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   HOST: z.string().default('127.0.0.1'),
@@ -17,7 +35,14 @@ const envSchema = z.object({
     .default('')
     .transform((value) => value.split(',').map((origin) => origin.trim()).filter(Boolean)),
   COOKIE_SECURE: booleanFlag,
-  TRUST_PROXY: booleanFlag,
+  TRUST_PROXY: trustProxy,
+  // Código exigido para criar a conta do dono. Em produção, sem ele, o cadastro
+  // fica fechado — ninguém da internet vira dono antes de você.
+  OWNER_SETUP_CODE: z
+    .string()
+    .optional()
+    .transform((value) => value || undefined)
+    .pipe(z.string().min(16, 'OWNER_SETUP_CODE precisa ter pelo menos 16 caracteres.').optional()),
   ACCESS_TOKEN_TTL_SECONDS: z.coerce.number().int().positive().default(900),
   REFRESH_TOKEN_TTL_DAYS: z.coerce.number().int().positive().default(30),
 });
@@ -35,6 +60,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   if (config.NODE_ENV === 'production') {
     if (!config.COOKIE_SECURE) throw new Error('Em produção, COOKIE_SECURE precisa ser true.');
     if (!config.DATABASE_URL) throw new Error('Em produção, DATABASE_URL é obrigatório (PGlite é só para dev).');
+    // A porta do Node só escuta local; quem fala com a internet é o Caddy.
+    if (!loopbackHosts.has(config.HOST)) throw new Error('Em produção, HOST precisa ser 127.0.0.1 (atrás do Caddy).');
   }
   return config;
 }

@@ -1,3 +1,4 @@
+import { createHash, timingSafeEqual } from 'node:crypto';
 import type { Db } from '../db/client.js';
 import { findRefreshTokenByHash, insertRefreshToken, revokeFamily, revokeIfActive } from '../db/refresh-tokens.js';
 import type { UserRow } from '../db/schema.js';
@@ -31,10 +32,28 @@ function isUniqueViolation(error: unknown): boolean {
   return typeof cause === 'object' && cause !== null && 'code' in cause && cause.code === '23505';
 }
 
-export function createAuthService(deps: { db: Db; accessTokens: AccessTokens; refreshTtlDays: number }) {
+function sameSecret(given: string, expected: string): boolean {
+  // Compara hashes de tamanho fixo em tempo constante (não vaza o código por timing).
+  const a = createHash('sha256').update(given).digest();
+  const b = createHash('sha256').update(expected).digest();
+  return timingSafeEqual(a, b);
+}
+
+export function createAuthService(deps: {
+  db: Db;
+  accessTokens: AccessTokens;
+  refreshTtlDays: number;
+  // undefined + produção = cadastro fechado; undefined fora de produção = sem código.
+  ownerSetupCode: string | undefined;
+  production: boolean;
+}) {
   const { db, accessTokens } = deps;
   const refreshTtlMs = deps.refreshTtlDays * 24 * 60 * 60 * 1000;
-  const throttle = new LoginThrottle(10, 15 * 60 * 1000);
+  const fifteenMinutes = 15 * 60 * 1000;
+  // Por conta+IP: trava quem está chutando, sem travar o dono em outro IP.
+  const throttlePerClient = new LoginThrottle(10, fifteenMinutes);
+  // Por conta, teto alto: freia ataque distribuído em muitos IPs.
+  const throttlePerAccount = new LoginThrottle(100, fifteenMinutes);
 
   async function issueSession(user: UserRow, familyId: string = newId()): Promise<Session> {
     const refreshToken = newRefreshToken();
@@ -56,8 +75,13 @@ export function createAuthService(deps: { db: Db; accessTokens: AccessTokens; re
   return {
     refreshTtlMs,
 
-    async register(input: { email: string; password: string; name: string }): Promise<Session> {
+    async register(input: { email: string; password: string; name: string; setupCode?: string | undefined }): Promise<Session> {
       if (await hasAnyUser(db)) throw errors.registrationClosed();
+      if (deps.ownerSetupCode) {
+        if (!input.setupCode || !sameSecret(input.setupCode, deps.ownerSetupCode)) throw errors.invalidSetupCode();
+      } else if (deps.production) {
+        throw errors.registrationClosed();
+      }
       const passwordHash = await hashPassword(input.password);
       try {
         const user = await insertOwner(db, { id: newId(), email: input.email, name: input.name, passwordHash });
@@ -69,19 +93,22 @@ export function createAuthService(deps: { db: Db; accessTokens: AccessTokens; re
       }
     },
 
-    async login(input: { email: string; password: string }): Promise<Session> {
-      if (throttle.isBlocked(input.email)) throw errors.rateLimited();
+    async login(input: { email: string; password: string }, clientIp: string): Promise<Session> {
+      const clientKey = `${input.email}|${clientIp}`;
+      const blockedFor =
+        throttlePerClient.blockedForSeconds(clientKey) ?? throttlePerAccount.blockedForSeconds(input.email);
+      if (blockedFor !== null) throw errors.rateLimited(blockedFor);
+
       const user = await findUserByEmail(db, input.email);
-      if (!user) {
-        await burnPasswordCheck(input.password);
-        throttle.recordFailure(input.email);
+      let ok = false;
+      if (user) ok = await verifyPassword(user.passwordHash, input.password);
+      else await burnPasswordCheck(input.password);
+      if (!user || !ok) {
+        throttlePerClient.recordFailure(clientKey);
+        throttlePerAccount.recordFailure(input.email);
         throw errors.invalidCredentials();
       }
-      if (!(await verifyPassword(user.passwordHash, input.password))) {
-        throttle.recordFailure(input.email);
-        throw errors.invalidCredentials();
-      }
-      throttle.reset(input.email);
+      throttlePerClient.reset(clientKey);
       return issueSession(user);
     },
 

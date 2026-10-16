@@ -12,6 +12,8 @@ const registerBody = z.object({
   email,
   password: z.string().min(8).max(128),
   name: z.string().trim().min(1).max(80),
+  // Exigido quando o servidor tem OWNER_SETUP_CODE (sempre em produção).
+  setupCode: z.string().max(200).optional(),
 });
 
 const loginBody = z.object({
@@ -78,7 +80,7 @@ export async function authRoutes(app: FastifyInstance, opts: AuthRouteOptions): 
       schema: { body: loginBody, response: { 200: sessionResponse } },
       config: { rateLimit: { max: 10, timeWindow: '15 minutes' } },
     },
-    async (request, reply) => sendSession(reply, await auth.login(request.body), 200),
+    async (request, reply) => sendSession(reply, await auth.login(request.body, request.ip), 200),
   );
 
   r.post(

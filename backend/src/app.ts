@@ -9,6 +9,7 @@ import type { Config } from './config.js';
 import type { Database } from './db/client.js';
 import { errors } from './lib/errors.js';
 import { newId } from './lib/ids.js';
+import { serializeErrorSafely } from './lib/log.js';
 import { createAuthGuard } from './plugins/auth-guard.js';
 import { registerErrorHandler } from './plugins/error-handler.js';
 import { authRoutes } from './routes/auth.js';
@@ -20,10 +21,11 @@ import { createAccessTokens } from './services/tokens.js';
 z.config(z.locales.pt());
 
 // P4: o log nunca leva query string (pode ter busca por estabelecimento/valor),
-// corpo, cookie nem Authorization.
+// corpo, cookie, Authorization nem mensagem/parâmetros de erro de banco.
 const logger: FastifyServerOptions['logger'] = {
   level: 'info',
   serializers: {
+    err: serializeErrorSafely,
     req: (request: { method: string; url: string; id: string }) => ({
       id: request.id,
       method: request.method,
@@ -33,11 +35,13 @@ const logger: FastifyServerOptions['logger'] = {
 };
 
 export async function buildApp(config: Config, database: Database) {
+  const trustedHops = config.TRUST_PROXY;
   const app = Fastify({
     logger: config.NODE_ENV === 'test' ? false : logger,
     genReqId: () => newId(),
     requestIdHeader: false,
-    trustProxy: config.TRUST_PROXY,
+    // N = confia só nos N saltos mais próximos (Caddy, Vercel); o resto do XFF é ignorado.
+    trustProxy: typeof trustedHops === 'number' ? (_address: string, hop: number) => hop < trustedHops : trustedHops,
     bodyLimit: 64 * 1024,
   });
 
@@ -58,6 +62,8 @@ export async function buildApp(config: Config, database: Database) {
 
   app.addHook('onRequest', async (request, reply) => {
     reply.header('x-request-id', request.id);
+    // Respostas com token e dado financeiro nunca ficam em cache (navegador/proxy).
+    reply.header('cache-control', 'no-store');
   });
 
   await app.register(helmet, {
@@ -82,7 +88,13 @@ export async function buildApp(config: Config, database: Database) {
   });
 
   const accessTokens = createAccessTokens(config.JWT_SECRET, config.ACCESS_TOKEN_TTL_SECONDS);
-  const auth = createAuthService({ db: database.db, accessTokens, refreshTtlDays: config.REFRESH_TOKEN_TTL_DAYS });
+  const auth = createAuthService({
+    db: database.db,
+    accessTokens,
+    refreshTtlDays: config.REFRESH_TOKEN_TTL_DAYS,
+    ownerSetupCode: config.OWNER_SETUP_CODE,
+    production: config.NODE_ENV === 'production',
+  });
   const requireAuth = createAuthGuard(auth);
 
   await app.register(healthRoutes, { database });

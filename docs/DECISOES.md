@@ -389,6 +389,38 @@ o front chama `refresh`/`logout` com `credentials: 'include'` e apaga o uso do
 construção do back-end **não** fica parada. Só preciso da decisão antes de
 fechar a tela de login.
 
+### P-14 — Campo "código de configuração" no Criar conta 🟡 bloqueia cadastro em produção
+
+Aberta por Claude em 2026-10-16, a partir da revisão de segurança.
+
+Sem proteção, quando a API for para a internet, **quem chamar
+`POST /v1/auth/register` primeiro vira o dono do app** (scanners acham
+servidores novos em minutos). O back agora exige `setupCode` em produção
+(contrato 1.0.2). O humano define o código no `.env` da VPS.
+
+**Pedido ao front-end:** na tela **Criar conta**, um campo "Código de
+configuração" (texto, `autocomplete="off"`), enviado como `setupCode`. Erro
+`403 FORBIDDEN` ⇒ "Código de configuração inválido." Na tela de login não muda
+nada. Em dev local o back não exige o código, então nada quebra hoje.
+
+### P-15 — Travar a VPS para só aceitar tráfego da Vercel 🟡 bloqueia deploy (Fase 5)
+
+Aberta por Claude em 2026-10-16, a partir da revisão de segurança.
+
+Quem souber o endereço DuckDNS pode chamar a VPS direto, sem passar pela
+Vercel. O back já se protege (TRUST_PROXY por número de saltos, `HOST`
+loopback obrigatório em produção, limite por conta), mas o ideal é o Caddy
+recusar o que não veio da Vercel. Vercel *rewrites* não adicionam cabeçalho na
+requisição ao destino; caminho provável: Vercel Routing Middleware injetando um
+cabeçalho secreto, conferido pelo Caddy. Decidir na fase de deploy — envolve o
+front (middleware) e a VPS. Não bloqueia nada antes disso.
+
+### Riscos aceitos (revisão de segurança 2026-10-16)
+- `refreshToken` ainda vem no corpo da resposta (transição P-13): sai na v2.0.0
+  quando o front confirmar que não usa mais. O front já migrou para cookie.
+- Access token continua válido até 15 min após logout/roubo detectado.
+  Aceitável para app de 1 pessoa; reavaliar se surgir mais de um dispositivo.
+
 ---
 
 ## Descartados (não reabrir sem motivo novo)
