@@ -108,6 +108,17 @@ do humano, no commit `ff680c7`. Revise se quiser. Falta, por prioridade:
 4. `POST /share` vindo de outro site (`Sec-Fetch-Site: cross-site`) ⇒ descartar.
 5. `cartao.lastUser` guarda só `{ id, name }`, sem e-mail.
 6. Logout limpa as outras abas (evento `storage`).
+7. **Logout que falha não pode fingir que saiu** (`App.tsx:283-289`,
+   `api.ts:162-168`): hoje, sem rede, mostra o login mas o cookie e o refresh
+   continuam válidos e a próxima abertura entra sem senha. Manter a sessão e
+   avisar, ou guardar "logout pendente" e repetir antes de qualquer `refresh()`.
+8. **Sessão offline só offline de verdade** (`App.tsx:56-58`): hoje qualquer
+   erro do refresh (429, 5xx) abre os dados guardados mesmo online. Só com
+   `navigator.onLine === false` ou erro de rede, e prazo de 24 h.
+
+> Revisão de 2026-10-16 (Semgrep da Trail of Bits + manual): itens 1–6 seguem
+> abertos; 7–8 são novos. XSS, tokens, service worker, CSP/headers, segredos
+> no bundle e dependências estão OK; `npm audit` sem vulnerabilidades.
 
 ### P-15 — VPS aceitar só tráfego vindo da Vercel (Claude + ChatGPT, sem pressa)
 Hoje quem souber a URL sslip.io chama a API direto. O back já se protege
