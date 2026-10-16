@@ -22,7 +22,7 @@ para saber o que já está fechado (não questionar) e o que está em aberto.
 | D9 | Exposição HTTPS da VPS | **Cloudflare Tunnel** (sem porta aberta na VPS). ⚠️ Exige domínio para URL fixa — ver P-13 | 2026-10-10 | humano |
 | D10 | Captura de compras no iPhone | **Caminho C** (Atalhos iOS → `POST /v1/ingest/raw`) + **caminho D** (colar texto). Sem Open Finance, sem e-mail | 2026-10-10 | humano |
 | D11 | LLM na categorização (altera D2) | **Jev (TypeSafe AI)** como camada 3, entre dicionário e pergunta. Só o nome do estabelecimento é enviado | 2026-10-16 | humano |
-| D12 | Exposição da API em produção (resolve P-13) | **Custo zero:** Vercel faz proxy de `/v1/*` para a VPS; VPS com subdomínio grátis (DuckDNS) + HTTPS Let's Encrypt. Refresh token em cookie `HttpOnly` | 2026-10-16 | humano |
+| D12 | Exposição da API em produção (resolve P-13) | **Custo zero:** Vercel faz proxy de `/v1/*` para a VPS Oracle (Always Free); VPS com nome grátis **sslip.io** (`clivra-api.163-176-182-24.sslip.io`, já usado no Caddy da VPS) + HTTPS Let's Encrypt. Refresh token em cookie `HttpOnly` | 2026-10-16 | humano |
 
 ### D11 — detalhe
 
@@ -414,6 +414,49 @@ recusar o que não veio da Vercel. Vercel *rewrites* não adicionam cabeçalho n
 requisição ao destino; caminho provável: Vercel Routing Middleware injetando um
 cabeçalho secreto, conferido pelo Caddy. Decidir na fase de deploy — envolve o
 front (middleware) e a VPS. Não bloqueia nada antes disso.
+
+### P-16 — Correções de segurança do front-end 🟡 itens 1–2 bloqueiam o deploy
+
+Aberta por Claude em 2026-10-16. Revisão independente do `frontend/`, **só
+leitura** (o Claude não edita o front). Nada crítico/alto; `npm audit`: 0
+vulnerabilidades; sem XSS, sem token no SW, sem telemetria — bom trabalho.
+
+**Pedido ao front-end (ChatGPT), por prioridade:**
+
+1. **`vercel.json` — rewrite da API** (impede o deploy): antes do fallback do
+   SPA, `{ "source": "/v1/:path*", "destination": "https://clivra-api.163-176-182-24.sslip.io/v1/:path*" }`.
+   Hoje o fallback manda `/v1/*` para o `index.html`. **Não** usar
+   `VITE_API_URL` com a URL da VPS: quebraria o cookie same-origin.
+2. **`vercel.json` — cabeçalhos de segurança** (sem eles, clickjacking e sem
+   defesa contra XSS). Publicar primeiro como `Content-Security-Policy-Report-Only`:
+   ```json
+   "headers": [{ "source": "/(.*)", "headers": [
+     { "key": "Content-Security-Policy", "value": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests" },
+     { "key": "X-Content-Type-Options", "value": "nosniff" },
+     { "key": "Referrer-Policy", "value": "no-referrer" },
+     { "key": "Permissions-Policy", "value": "camera=(), microphone=(), geolocation=(), payment=(), usb=(), browsing-topics=()" },
+     { "key": "X-Frame-Options", "value": "DENY" },
+     { "key": "Cross-Origin-Opener-Policy", "value": "same-origin" }
+   ]}]
+   ```
+3. **Cache offline de dados financeiros** (`lib/query.ts`, `App.tsx` `restore()`):
+   hoje todo o cache (transações, perguntas, resumo) fica 7 dias em texto claro
+   no `localStorage` e aparece **sem login** se o celular estiver offline
+   (modo avião + celular desbloqueado = gastos visíveis). Sugestão: persistir só
+   o não sensível (`categories`, no máximo o resumo do mês) via
+   `dehydrateOptions.shouldDehydrateQuery`; `maxAge` 24 h; sessão offline com
+   prazo curto (`offlineUntil`). Se offline completo for requisito, o humano
+   registra como risco aceito.
+4. **Logout cancela o push** (`disablePush()` antes de `api.logout()`): hoje,
+   depois de sair, tocar num botão de categoria da notificação guarda a ação e
+   ela é aplicada sozinha no próximo login.
+5. **IndexedDB do SW com prazo** (`sw.ts`): gravar `createdAt` em texto
+   compartilhado e ação de push; descartar > 10 min; mensagem `CLEAR_PENDING`
+   no logout.
+6. **`POST /share` de outro site** (`sw.ts`): se `Sec-Fetch-Site === 'cross-site'`,
+   descartar o texto (evita site malicioso pré-preencher um gasto falso).
+7. **`cartao.lastUser`**: guardar só `{ id, name }`, sem e-mail.
+8. **Logout em várias abas**: ouvir o evento `storage` e limpar as outras abas.
 
 ### Riscos aceitos (revisão de segurança 2026-10-16)
 - `refreshToken` ainda vem no corpo da resposta (transição P-13): sai na v2.0.0
