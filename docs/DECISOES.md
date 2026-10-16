@@ -23,6 +23,7 @@ para saber o que já está fechado (não questionar) e o que está em aberto.
 | D10 | Captura de compras no iPhone | **Caminho C** (Atalhos iOS → `POST /v1/ingest/raw`) + **caminho D** (colar texto). Sem Open Finance, sem e-mail | 2026-10-10 | humano |
 | D11 | LLM na categorização (altera D2) | **Jev (TypeSafe AI)** como camada 3, entre dicionário e pergunta. Só o nome do estabelecimento é enviado | 2026-10-16 | humano |
 | D12 | Exposição da API em produção (resolve P-13) | **Custo zero:** Vercel faz proxy de `/v1/*` para a VPS Oracle (Always Free); VPS com nome grátis **sslip.io** (`clivra-api.163-176-182-24.sslip.io`, já usado no Caddy da VPS) + HTTPS Let's Encrypt. Refresh token em cookie `HttpOnly` | 2026-10-16 | humano |
+| D13 | Infra da API na VPS | Postgres 16 e Node 24 **nativos** (sem Docker — menos RAM), systemd com sandbox, Caddy existente com bloco próprio, backup diário local. Detalhes em `backend/CLAUDE.md` §Produção | 2026-10-16 | Claude (aprovado pelo humano) |
 
 ### D11 — detalhe
 

@@ -19,6 +19,27 @@ Banco em dev/teste: **PGlite** (Postgres embutido, sem Docker). `DATABASE_URL`
 vazio ⇒ PGlite em `PGLITE_DIR`. Produção: Postgres real (D4). Migrations rodam
 sozinhas no boot (`src/server.ts`).
 
+## Produção (VPS Oracle Always Free — D12)
+
+- **URL:** `https://clivra-api.163-176-182-24.sslip.io` (o front chega via proxy
+  `/v1/*` da Vercel). Ubuntu 24.04 ARM, host SSH `oracle`.
+- **Deploy:** commit, depois `bash deploy/deploy.sh` (Git Bash, em `backend/`).
+  Faz typecheck + testes + build, sobe para `/opt/clivra/releases/<sha>`,
+  `npm ci --ignore-scripts`, troca o link `current`, reinicia e confere o health.
+  Mantém 3 releases. Rollback: apontar `/opt/clivra/current` para a anterior e
+  `sudo systemctl restart clivra`.
+- **Serviço:** `clivra.service` (usuário `clivra`, sandbox systemd, só
+  `127.0.0.1:3333`). Logs: `sudo journalctl -u clivra`.
+- **Banco:** Postgres 16 local, só socket/localhost, role `clivra` por peer
+  auth (sem senha). Backup diário `/etc/cron.daily/clivra-backup` →
+  `/var/backups/clivra` (14 dias, mesmo disco — não protege contra perda da VPS).
+- **Segredos:** `/etc/clivra/clivra.env` (root, 0600), gerados na própria VPS.
+  Código do primeiro cadastro: `ssh oracle sudo grep OWNER_SETUP_CODE /etc/clivra/clivra.env`.
+- **Caddy:** bloco próprio no `/etc/caddy/Caddyfile` (`deploy/Caddyfile.clivra`);
+  o site `163-176-182-24.sslip.io` (painel do usuário) **não é nosso — não mexer**.
+- **Limites Always Free:** disco de 200 GB já é o total grátis (não criar
+  volume). Máquina ociosa por 7 dias pode ser desligada pela Oracle.
+
 ## Camadas (não pular)
 
 ```
