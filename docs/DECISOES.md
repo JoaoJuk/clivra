@@ -68,8 +68,10 @@ Entram no contrato como **v1.1.0** (só adições) quando o ChatGPT confirmar.
 
 ## Pendências abertas
 
-### P-18 — Telas do código por e-mail (ChatGPT)
-Contrato 1.0.3, §1. Back pronto e em produção.
+### P-18 — Telas do código por e-mail (ChatGPT) — **bloqueia o cadastro**
+Contrato 1.0.3, §1. Back pronto e em produção. **Urgente:** o banco de produção
+está sem conta (conferido em 2026-10-16) e o cadastro agora exige `emailCode`,
+então pelo app ninguém consegue criar a conta até esta tela existir.
 1. **Criar conta:** depois do formulário, `POST /v1/auth/email-code`
    (`purpose: "register"`, com `setupCode`); tela "Digite o código enviado para
    <e-mail>" (6 dígitos, `inputmode="numeric"`, `autocomplete="one-time-code"`)
