@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none" role="img" aria-labelledby="title">
+  <title id="title">CLIVRA</title>
+  <rect width="512" height="512" rx="108" fill="#102A31"/>
+  <path d="M352 128H226C145 128 102 182 102 256s43 128 124 128h126" stroke="#F7FBFA" stroke-width="50" stroke-linecap="square"/>
+  <path d="M258 256h110" stroke="#0DAA91" stroke-width="50" stroke-linecap="square"/>
+</svg>

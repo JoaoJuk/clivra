@@ -1,0 +1,28 @@
+# Dependências e builds
+node_modules/
+.npm-cache/
+dist/
+dev-dist/
+*.tsbuildinfo
+coverage/
+
+# Segredos — nunca commitar. Só os .env.example vão para o git.
+.env
+.env.*
+!.env.example
+
+# Dados locais do Postgres de desenvolvimento
+backend/.pgdata/
+
+# Artefatos de QA/teste
+.qa/
+test-results/
+playwright-report/
+.playwright-mcp/
+
+# Editor (settings.json pode receber chave de extensão)
+.vscode/settings.json
+
+# Sistema
+Thumbs.db
+.DS_Store
