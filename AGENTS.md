@@ -36,6 +36,8 @@ e mês.
 
 ## 4. Arquitetura em produção
 
+**App em produção: https://clivra-puce.vercel.app/**
+
 ```
 iPhone (PWA) ──HTTPS──▶ Vercel ──┬─ /*     → arquivos do PWA (frontend/)
                                  └─ /v1/*  → proxy ──▶ clivra-api.163-176-182-24.sslip.io
