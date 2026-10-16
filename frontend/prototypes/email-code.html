@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="pt-BR">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CLIVRA — Prévia do código por e-mail</title>
+<link rel="stylesheet" href="/src/ui/styles.css">
+<style>
+  .code-wrap { position: relative; display: block; }
+  .code-wrap input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; font-size: 16px; }
+  .code-blocks { display: grid; grid-template-columns: repeat(6,minmax(0,1fr)); gap: 8px; }
+  .code-blocks span { height: 58px; border: 1px solid #d9e0e1; border-radius: 7px; background: #f8faf9; display: grid; place-items: center; font-size: 24px; }
+  .code-wrap:focus-within .code-blocks { outline: 2px solid #56bba9; outline-offset: 3px; border-radius: 7px; }
+  .auth-field input { font-size: 16px; }
+  .auth-help { color: #738388; font-size: 13px; line-height: 1.6; margin: 0; }
+  .auth-link { min-height: 44px; border: 0; background: transparent; color: #007e6b; font-weight: 650; }
+  .auth-intro p { overflow-wrap: anywhere; }
+  .preview-nav { padding: 12px; background: #edf5f2; display: flex; flex-wrap: wrap; gap: 8px; }
+  .preview-nav a { color: #007e6b; padding: 8px; }
+</style>
+<nav class="preview-nav" aria-label="Estados da prévia"><a href="?step=login">Login</a><a href="?step=register">Confirmar e-mail</a><a href="?step=request">Esqueci minha senha</a><a href="?step=reset">Nova senha</a></nav>
+<main class="auth-layout auth-refined">
+<section class="auth-form-shell"><div class="auth-form-inner">
+<div class="auth-signature"><img src="/clivra-symbol.svg" alt="" width="42" height="42"><span>CLIVRA</span></div>
+<div class="auth-intro"><span class="auth-section-label">ACESSO À CONTA</span><h1 id="title">Confira seu e-mail.</h1><p id="description">Digite o código enviado para voce@exemplo.com.</p></div>
+<form class="auth-form" onsubmit="return false">
+<label class="auth-field" id="email"><span>E-mail</span><input type="email" placeholder="voce@exemplo.com" autocomplete="email"></label>
+<label class="auth-field" id="code"><span>Código de 6 dígitos</span><span class="code-wrap"><input id="code-input" aria-label="C?digo de 6 d?gitos" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}"><span class="code-blocks" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span></span></span></label>
+<label class="auth-field" id="password"><span id="password-label">Nova senha</span><span class="auth-password-wrap"><input type="password" placeholder="Mínimo de 8 caracteres" autocomplete="new-password"><button type="button">Mostrar</button></span></label>
+<button class="auth-link" id="forgot" type="button" style="text-align:right">Esqueci minha senha</button><p class="auth-help" id="help">O código vale por 10 minutos. Confira também a pasta de spam.</p>
+<button class="auth-submit" id="submit">Confirmar e criar conta</button>
+<button class="auth-link" id="resend" disabled>Reenviar código em 60 s</button>
+</form><div class="auth-switch"><button type="button" id="back">Voltar ao cadastro</button></div>
+</div><p class="auth-legal">© 2026 CLIVRA</p></section>
+<aside class="auth-visual"><div class="auth-visual-top"><span>FINANÇAS PESSOAIS</span><span>CONTROLE DE GASTOS</span></div><div class="auth-visual-body"><span class="auth-visual-rule"></span><h2>Clareza para decidir. Controle para seguir.</h2><p>Uma leitura simples dos gastos em todos os seus cartões.</p></div><p class="auth-visual-foot">PRÉVIA COM DADOS FICTÍCIOS <span>CLIVRA © 2026</span></p></aside>
+</main>
+<script>
+const step = new URLSearchParams(location.search).get('step') || 'register';
+const el = (id) => document.getElementById(id);
+el('email').style.display = ['request','login'].includes(step) ? '' : 'none';
+el('forgot').style.display = step === 'login' ? '' : 'none';
+el('forgot').onclick = () => location.search = '?step=request';
+el('code-input').oninput = (event) => { event.target.value = event.target.value.replace(/\D/g,'').slice(0,6); document.querySelectorAll('.code-blocks span').forEach((block,index) => block.textContent = event.target.value[index] || ''); }; 
+el('password').style.display = ['reset','login'].includes(step) ? '' : 'none';
+for (const id of ['code', 'help', 'resend']) el(id).style.display = ['request','login'].includes(step) ? 'none' : '';
+if (['request','reset'].includes(step)) {
+  el('title').textContent = step === 'request' ? 'Recupere seu acesso.' : 'Defina uma nova senha.';
+  el('description').textContent = step === 'request' ? 'Informe seu e-mail para receber um código de recuperação.' : 'Se houver conta com esse e-mail, enviamos um código. Use-o abaixo para alterar sua senha.';
+  el('submit').textContent = step === 'request' ? 'Enviar código' : 'Alterar senha';
+  el('back').textContent = 'Voltar ao login';
+}
+if (step === 'login') {
+  el('title').textContent = 'Bom ter voc? de volta.';
+  el('description').textContent = 'Seus cart?es e gastos, organizados em um s? lugar.';
+  el('password-label').textContent = 'Senha';
+  el('submit').textContent = 'Entrar na conta';
+  el('back').textContent = 'Criar conta';
+}
+el('submit').onclick = () => { if (step === 'request') location.search = '?step=reset'; if (step === 'reset') { location.search = '?step=login&success=1'; } };
+el('back').onclick = () => location.search = '?step=login';
+if (new URLSearchParams(location.search).has('success')) el('description').textContent = 'Senha alterada. Entre com a nova senha.';
+</script>
+</html>

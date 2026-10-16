@@ -1,7 +1,6 @@
 {
   "rewrites": [
-    { "source": "/v1/:path*", "destination": "https://clivra-api.163-176-182-24.sslip.io/v1/:path*" },
-    { "source": "/((?!.*\\.).*)", "destination": "/index.html" }
+    { "source": "/((?!v1(?:/|$)|.*\\.).*)", "destination": "/index.html" }
   ],
   "headers": [
     {

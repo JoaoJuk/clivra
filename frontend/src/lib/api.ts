@@ -17,29 +17,9 @@ import type {
   User,
 } from './types';
 
+import { clearOfflineSession, logoutStorageKey, readStorage, rememberOfflineSession, writeStorage } from './sessionStorage';
+
 const baseUrl = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
-const refreshStorageKey = 'cartao.refreshToken';
-const userStorageKey = 'cartao.lastUser';
-
-// Remove o token legado sem lê-lo: a sessão atual usa somente cookie HttpOnly.
-try { localStorage.removeItem(refreshStorageKey); } catch { /* Armazenamento indisponível. */ }
-
-function readStorage(key: string): string | null {
-  try {
-    return localStorage.getItem(key);
-  } catch {
-    return null;
-  }
-}
-
-function writeStorage(key: string, value: string | null): void {
-  try {
-    if (value === null) localStorage.removeItem(key);
-    else localStorage.setItem(key, value);
-  } catch {
-    // O armazenamento pode estar indisponível em modo privado.
-  }
-}
 
 export class ApiError extends Error {
   constructor(
@@ -102,62 +82,80 @@ export class ApiClient {
   private accessExpiresAt = 0;
   private refreshPromise: Promise<AuthSession> | null = null;
 
-  get cachedUser(): User | null {
-    try {
-      const value = readStorage(userStorageKey);
-      return value ? JSON.parse(value) as User : null;
-    } catch {
-      return null;
-    }
-  }
+  private generation = 0;
+  private loggingOut = false;
+
+  get sessionVersion(): number { return this.generation; }
 
   private rememberSession(session: AuthSession): AuthSession {
     this.accessToken = session.accessToken;
     this.accessExpiresAt = Date.now() + session.expiresIn * 1000;
-    writeStorage(userStorageKey, JSON.stringify(session.user));
+    rememberOfflineSession(session.user);
     return session;
   }
 
-  clearSession(): void {
+  clearSession(broadcast = false): void {
+    this.generation += 1;
     this.accessToken = null;
     this.accessExpiresAt = 0;
-    writeStorage(userStorageKey, null);
+    this.refreshPromise = null;
+    clearOfflineSession();
+    if (broadcast) writeStorage(logoutStorageKey, crypto.randomUUID());
+    window.dispatchEvent(new Event('clivra:session-ended'));
   }
 
-  async register(input: { email: string; password: string; name: string; setupCode?: string }): Promise<AuthSession> {
-    const session = await this.request<AuthSession>('/v1/auth/register', { method: 'POST', body: JSON.stringify(input) }, false);
+  private async authenticate(path: string, input: object): Promise<AuthSession> {
+    const generation = this.generation;
+    const logoutVersion = readStorage(logoutStorageKey);
+    const session = await this.request<AuthSession>(path, { method: 'POST', body: JSON.stringify(input) }, false);
+    if (generation !== this.generation || logoutVersion !== readStorage(logoutStorageKey)) {
+      throw new ApiError('A sessão foi encerrada. Entre novamente.', 401, 'SESSION_ENDED');
+    }
     return this.rememberSession(session);
+  }
+
+  async register(input: { email: string; password: string; name: string; setupCode?: string; emailCode: string }): Promise<AuthSession> {
+    return this.authenticate('/v1/auth/register', input);
   }
 
   async login(input: { email: string; password: string }): Promise<AuthSession> {
-    const session = await this.request<AuthSession>('/v1/auth/login', { method: 'POST', body: JSON.stringify(input) }, false);
-    return this.rememberSession(session);
+    return this.authenticate('/v1/auth/login', input);
   }
 
   async refresh(): Promise<AuthSession> {
+    if (this.loggingOut) throw new ApiError('Saída em andamento. Aguarde.', 409, 'SESSION_ENDING');
     if (this.refreshPromise) return this.refreshPromise;
-    this.refreshPromise = this.request<AuthSession>(
-      '/v1/auth/refresh',
-      { method: 'POST' },
-      false,
-    ).then((session) => this.rememberSession(session)).catch((error: unknown) => {
-      if (error instanceof ApiError && error.code === 'INVALID_REFRESH_TOKEN') this.clearSession();
+    const generation = this.generation;
+    this.refreshPromise = this.authenticate('/v1/auth/refresh', {}).catch((error: unknown) => {
+      if (generation === this.generation && error instanceof ApiError && error.status === 401) this.clearSession();
       throw error;
     }).finally(() => {
-      this.refreshPromise = null;
+      if (generation === this.generation) this.refreshPromise = null;
     });
     return this.refreshPromise;
   }
 
   async logout(): Promise<void> {
+    this.loggingOut = true;
     try {
+      // Aguarda a rotação em andamento antes de revogar o cookie mais recente.
+      await this.refreshPromise?.catch(() => undefined);
       await this.request<void>('/v1/auth/logout', { method: 'POST' }, false);
-    } finally {
-      this.clearSession();
-    }
+      this.clearSession(true);
+    } finally { this.loggingOut = false; }
+  }
+
+  emailCode(input: { email: string; purpose: 'register' | 'password_reset'; setupCode?: string }): Promise<{ expiresIn: number; resendIn: number }> {
+    return this.request('/v1/auth/email-code', { method: 'POST', body: JSON.stringify(input) }, false);
+  }
+
+  async resetPassword(input: { email: string; emailCode: string; newPassword: string }): Promise<void> {
+    await this.request<void>('/v1/auth/password-reset', { method: 'POST', body: JSON.stringify(input) }, false);
+    this.clearSession(true);
   }
 
   async request<T>(path: string, init: RequestInit = {}, authenticated = true, retry = true): Promise<T> {
+    if (authenticated && this.loggingOut) throw new ApiError('Saída em andamento. Aguarde.', 409, 'SESSION_ENDING');
     if (authenticated && (!this.accessToken || Date.now() >= this.accessExpiresAt - 30_000)) {
       await this.refresh();
     }
@@ -166,7 +164,9 @@ export class ApiClient {
     if (init.body && !(init.body instanceof FormData)) headers.set('Content-Type', 'application/json; charset=utf-8');
     if (authenticated && this.accessToken) headers.set('Authorization', `Bearer ${this.accessToken}`);
 
-    const response = await fetch(`${baseUrl}${path}`, { ...init, headers, credentials: 'include' });
+    const generation = this.generation;
+    const response = await fetch(`${baseUrl}${path}`, { ...init, headers, credentials: 'include', cache: 'no-store' });
+    if (authenticated && generation !== this.generation) throw new ApiError('A sessão foi encerrada.', 401, 'SESSION_ENDED');
     if (response.status === 401 && authenticated && retry) {
       await this.refresh();
       return this.request<T>(path, init, true, false);

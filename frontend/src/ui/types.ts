@@ -21,7 +21,7 @@ export interface ImportStatementSummary {
 }
 
 export interface AppViewData {
-  user?: User | null;
+  user?: (Pick<User, 'id' | 'name'> & Partial<Pick<User, 'email'>>) | null;
   summary?: Summary | null;
   transactions?: Transaction[];
   questions?: Question[];

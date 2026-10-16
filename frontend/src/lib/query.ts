@@ -6,7 +6,7 @@ export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       staleTime: 60_000,
-      gcTime: 7 * 24 * 60 * 60 * 1000,
+      gcTime: 24 * 60 * 60 * 1000,
       refetchOnWindowFocus: true,
       retry: (failureCount, error) => {
         if (error instanceof ApiError && error.status < 500) return false;
@@ -21,6 +21,6 @@ try { availableStorage = window.localStorage; } catch { availableStorage = undef
 
 export const queryPersister = createSyncStoragePersister({
   storage: availableStorage,
-  key: 'cartao.queryCache.v1',
+  key: 'cartao.queryCache.v2',
   throttleTime: 1000,
 });

@@ -10,8 +10,8 @@ function decodeVapidKey(value: string): Uint8Array<ArrayBuffer> {
 
 export async function getPushSubscription(): Promise<PushSubscription | null> {
   if (!('serviceWorker' in navigator) || !('PushManager' in window)) return null;
-  const registration = await navigator.serviceWorker.ready;
-  return registration.pushManager.getSubscription();
+  const registration = await navigator.serviceWorker.getRegistration();
+  return registration ? registration.pushManager.getSubscription() : null;
 }
 
 export async function enablePush(): Promise<void> {
@@ -37,5 +37,6 @@ export async function disablePush(): Promise<void> {
   const subscription = await getPushSubscription();
   if (!subscription) return;
   await api.unsubscribePush(subscription.endpoint);
-  await subscription.unsubscribe();
+  const removed = await subscription.unsubscribe();
+  if (!removed && await getPushSubscription()) throw new Error('Não foi possível desativar as notificações. Tente novamente.');
 }

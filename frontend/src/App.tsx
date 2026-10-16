@@ -5,7 +5,9 @@ import { disablePush, enablePush, getPushSubscription } from './lib/push';
 import { takePendingPushAction } from './lib/pushAction';
 import { takeSharedText } from './lib/share';
 import { queryPersister } from './lib/query';
-import type { CreateCardInput, CreateTransactionInput, User } from './lib/types';
+import type { CreateCardInput, CreateTransactionInput } from './lib/types';
+import { logoutStorageKey, userStorageKey, readOfflineSession, type SessionUser } from './lib/sessionStorage';
+import { prunePendingData } from './lib/pendingStore';
 import { AppView } from './ui/AppView';
 import { AuthView } from './ui/AuthView';
 import type { AppViewActions, TransactionFilters as ViewTransactionFilters, ViewName } from './ui/types';
@@ -24,7 +26,7 @@ function errorMessage(error: unknown): string {
 
 export function App() {
   const queryClient = useQueryClient();
-  const [user, setUser] = useState<User | null>(api.cachedUser);
+  const [user, setUser] = useState<SessionUser | null>(null);
   const [ready, setReady] = useState(false);
   const [offlineSession, setOfflineSession] = useState(false);
   const [browserOnline, setBrowserOnline] = useState(navigator.onLine);
@@ -39,7 +41,35 @@ export function App() {
   const pushActionReadStarted = useRef(false);
   const shareReadStarted = useRef(false);
   const month = currentMonthInSaoPaulo();
-  const authenticated = ready && Boolean(user);
+  const authenticated = ready && Boolean(user) && !offlineSession;
+
+  const clearLocalData = useCallback(() => {
+    setUser(null);
+    setOfflineSession(false);
+    setSharedText(null);
+    setPushEnabled(false);
+    setRequestedView(null);
+    setRequestedQuestionId(null);
+    setTransactionFilters({});
+    shareReadStarted.current = false;
+    pushActionReadStarted.current = false;
+    queryClient.clear();
+    void queryPersisterRemove();
+    void prunePendingData(true).catch(() => undefined);
+  }, [queryClient]);
+
+  useEffect(() => {
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === logoutStorageKey || (event.key === userStorageKey && event.newValue === null) || event.key === null) api.clearSession();
+    };
+    window.addEventListener('storage', onStorage);
+    window.addEventListener('clivra:session-ended', clearLocalData);
+    void prunePendingData().catch(() => undefined);
+    return () => {
+      window.removeEventListener('storage', onStorage);
+      window.removeEventListener('clivra:session-ended', clearLocalData);
+    };
+  }, [clearLocalData]);
 
   useEffect(() => {
     let active = true;
@@ -49,13 +79,13 @@ export function App() {
         if (active) { setUser(session.user); setOfflineSession(false); }
       } catch (error) {
         if (active) {
-          if (error instanceof ApiError && error.code === 'INVALID_REFRESH_TOKEN') {
-            setUser(null);
-            queryClient.clear();
-            void queryPersisterRemove();
+          const cached = readOfflineSession();
+          if (!(error instanceof ApiError) && (!navigator.onLine || error instanceof TypeError) && cached) {
+            setUser(cached.user); setOfflineSession(true);
+          } else {
+            clearLocalData();
+            if (!(error instanceof ApiError && error.status === 401)) setActionError('Não foi possível verificar sua sessão. Tente entrar novamente quando a conexão voltar.');
           }
-          else if (api.cachedUser) { setUser(api.cachedUser); setOfflineSession(true); }
-          else setUser(null);
         }
       } finally {
         if (active) setReady(true);
@@ -63,7 +93,24 @@ export function App() {
     }
     void restore();
     return () => { active = false; };
-  }, [queryClient]);
+  }, [clearLocalData]);
+
+  useEffect(() => {
+    if (!user) return;
+    const expiresAt = readOfflineSession()?.expiresAt;
+    if (!expiresAt) return;
+    const checkExpiry = () => {
+      if (Date.now() >= expiresAt) api.clearSession();
+    };
+    const timer = window.setTimeout(checkExpiry, Math.max(0, expiresAt - Date.now()));
+    window.addEventListener('focus', checkExpiry);
+    document.addEventListener('visibilitychange', checkExpiry);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener('focus', checkExpiry);
+      document.removeEventListener('visibilitychange', checkExpiry);
+    };
+  }, [user, offlineSession]);
 
   useEffect(() => {
     const onOnline = () => {
@@ -73,14 +120,17 @@ export function App() {
           setUser(session.user);
           setOfflineSession(false);
           void queryClient.invalidateQueries();
-        }).catch(() => undefined);
+        }).catch((error: unknown) => {
+          if (error instanceof ApiError) clearLocalData();
+          setActionError('Não foi possível verificar sua sessão. Tente novamente.');
+        });
       }
     };
     const onOffline = () => setBrowserOnline(false);
     window.addEventListener('online', onOnline);
     window.addEventListener('offline', onOffline);
     return () => { window.removeEventListener('online', onOnline); window.removeEventListener('offline', onOffline); };
-  }, [offlineSession, queryClient]);
+  }, [offlineSession, queryClient, clearLocalData]);
 
   useEffect(() => {
     if (!authenticated) return;
@@ -99,7 +149,9 @@ export function App() {
   useEffect(() => {
     if (!authenticated || window.location.pathname !== '/share' || shareReadStarted.current) return;
     shareReadStarted.current = true;
+    const version = api.sessionVersion;
     void takeSharedText().then((text) => {
+      if (version !== api.sessionVersion) return;
       if (text) setSharedText(text);
       else setActionError('Não encontramos o texto compartilhado. Você pode colá-lo manualmente.');
     }).catch(() => setActionError('Não foi possível abrir o conteúdo compartilhado.'));
@@ -217,11 +269,16 @@ export function App() {
       await queryClient.invalidateQueries();
     },
     onLogout: async () => {
-      try { await api.logout(); }
-      finally {
-        queryClient.clear();
-        await queryPersisterRemove();
-        setUser(null);
+      setActionError(null);
+      try {
+        await disablePush();
+        setPushEnabled(false);
+        await prunePendingData(true);
+        await api.logout();
+        clearLocalData();
+      } catch {
+        setActionError('Não foi possível concluir a saída. Sua sessão continua aberta. Verifique a conexão e tente novamente.');
+        throw new Error('Não foi possível sair. Verifique a conexão e tente novamente.');
       }
     },
     onLoadMoreTransactions: async () => { if (transactionsQuery.hasNextPage) await transactionsQuery.fetchNextPage(); },
@@ -256,10 +313,10 @@ export function App() {
     },
   };
 
-  async function handleAuth(mode: 'login' | 'register', input: { email: string; password: string; name?: string; setupCode?: string }) {
+  async function handleAuth(mode: 'login' | 'register', input: { email: string; password: string; name?: string; setupCode?: string; emailCode?: string }) {
     setActionError(null);
     const session = mode === 'register'
-      ? await api.register({ email: input.email, password: input.password, name: input.name || '', ...(input.setupCode ? { setupCode: input.setupCode } : {}) })
+      ? await api.register({ email: input.email, password: input.password, name: input.name || '', emailCode: input.emailCode || '', ...(input.setupCode ? { setupCode: input.setupCode } : {}) })
       : await api.login({ email: input.email, password: input.password });
     queryClient.clear();
     await queryPersisterRemove();
@@ -268,7 +325,13 @@ export function App() {
   }
 
   if (!ready) return <div className="boot-screen" role="status">Abrindo seu controle de gastos...</div>;
-  if (!user) return <AuthView onSubmit={handleAuth} loading={false} error={actionError} />;
+  if (!user) return <AuthView
+    onSubmit={handleAuth}
+    onRequestCode={(input) => api.emailCode(input)}
+    onResetPassword={(input) => api.resetPassword(input)}
+    loading={false}
+    error={actionError}
+  />;
 
   const path = window.location.pathname;
   const initialView: ViewName = requestedView || (path.startsWith('/questions') ? 'questions' : 'dashboard');

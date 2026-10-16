@@ -1,0 +1,47 @@
+import { expect, type BrowserContext, type Page } from '@playwright/test';
+
+export async function mockApi(context: BrowserContext) {
+  const state = { authorized: false, refreshStatus: 200, logoutStatus: 204, codeStatus: 202, registerStatus: 201, resetStatus: 204, calls: [] as Array<{ path: string; body: Record<string, unknown> }> };
+  const session = { accessToken: 'test-access', expiresIn: 900, user: { id: 'test-user', name: 'Teste', email: 'teste@example.com' } };
+  await context.route('**/v1/**', async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    let body = {};
+    try { body = route.request().postDataJSON() || {}; } catch { /* Sem corpo. */ }
+    state.calls.push({ path, body });
+    const reply = (status: number, json?: unknown) => route.fulfill({ status, contentType: 'application/json', ...(status === 204 ? {} : { body: JSON.stringify(json) }) });
+    const error = (status: number, code: string) => reply(status, { error: { code, message: code === 'INVALID_EMAIL_CODE' ? 'Código inválido ou expirado. Reenvie o código e tente novamente.' : 'Não foi possível concluir a solicitação.' } });
+    if (path.endsWith('/health')) return reply(200, { status: 'ok', version: '1' });
+    if (path.endsWith('/auth/refresh')) {
+      if (state.refreshStatus !== 200) return error(state.refreshStatus, 'SERVICE_UNAVAILABLE');
+      return state.authorized ? reply(200, session) : error(401, 'INVALID_REFRESH_TOKEN');
+    }
+    if (path.endsWith('/auth/login')) { state.authorized = true; return reply(200, session); }
+    if (path.endsWith('/auth/email-code')) return state.codeStatus === 202 ? reply(202, { expiresIn: 600, resendIn: 2 }) : error(state.codeStatus, 'SERVICE_UNAVAILABLE');
+    if (path.endsWith('/auth/register')) {
+      if (state.registerStatus !== 201) return error(state.registerStatus, 'INVALID_EMAIL_CODE');
+      state.authorized = true; return reply(201, session);
+    }
+    if (path.endsWith('/auth/password-reset')) return state.resetStatus === 204 ? reply(204) : error(state.resetStatus, 'INVALID_EMAIL_CODE');
+    if (path.endsWith('/auth/logout')) {
+      if (state.logoutStatus !== 204) return error(state.logoutStatus, 'SERVICE_UNAVAILABLE');
+      state.authorized = false; return reply(204);
+    }
+    if (path.endsWith('/categories')) return reply(200, { data: [{ id: 'mercado', name: 'Mercado', group: 'essenciais', icon: 'cart', color: '#123456' }] });
+    if (path.endsWith('/summary')) return reply(200, null);
+    if (path.endsWith('/count')) return reply(200, { open: 0 });
+    return reply(200, { data: [], page: { hasMore: false, nextCursor: null }, summary: { totalCents: 0, count: 0 } });
+  });
+  return state;
+}
+
+export async function login(page: Page) {
+  await page.goto('/');
+  await page.getByLabel('E-mail', { exact: true }).fill('teste@example.com');
+  await page.locator('input[autocomplete="current-password"]').fill('test-password');
+  await page.getByRole('button', { name: 'Entrar na conta' }).click();
+  await expect(page.getByRole('button', { name: 'Entrar na conta' })).toHaveCount(0);
+}
+
+export async function openSettings(page: Page) {
+  await page.getByRole('button', { name: 'Ajustes', exact: true }).filter({ visible: true }).click();
+}

@@ -10,7 +10,7 @@ histórico completo (discussões, pendências já resolvidas) está no git:
 
 | Tela | Front (ChatGPT) | Back (Claude) | Produção |
 |---|---|---|---|
-| Login / Criar conta | ✅ (falta P-18) | ✅ + código por e-mail | ✅ testado no iPhone |
+| Login / Criar conta | ✅ + código por e-mail | ✅ + código por e-mail | ⏳ testar na homologação (prod sem conta) |
 | Cartões | ✅ com mock | ⬜ **próxima** | — |
 | Lançar compra (colar / manual) | ✅ com mock | ⬜ | — |
 | Transações | ✅ com mock | ⬜ | — |
@@ -69,7 +69,7 @@ Entram no contrato como **v1.1.0** (só adições) quando o ChatGPT confirmar.
 
 ## Pendências abertas
 
-### P-19 — Preview da Vercel chamar a API de homologação (ChatGPT)
+### P-19 — Preview da Vercel chamar a API de homologação — ✅ feito (`frontend/middleware.ts`), falta a homologação no ar
 Hoje o `vercel.json` manda `/v1/*` sempre para a produção, inclusive no
 Preview. Precisa: deploy de Preview (branch `develop`) → proxy para
 `https://clivra-api-hml.163-176-182-24.sslip.io`; Production → a API atual.
@@ -78,23 +78,13 @@ Routing Middleware lendo `VERCEL_ENV`. Dá para juntar com a **P-15** (o
 mesmo middleware manda o cabeçalho secreto). Deixar a Deployment Protection
 da Vercel ligada nos Previews.
 
-### P-18 — Telas do código por e-mail (ChatGPT) — **bloqueia o cadastro**
-Contrato 1.0.3, §1. Back pronto e em produção. **Urgente:** o banco de produção
-está sem conta (conferido em 2026-10-16) e o cadastro agora exige `emailCode`,
-então pelo app ninguém consegue criar a conta até esta tela existir.
-1. **Criar conta:** depois do formulário, `POST /v1/auth/email-code`
-   (`purpose: "register"`, com `setupCode`); tela "Digite o código enviado para
-   <e-mail>" (6 dígitos, `inputmode="numeric"`, `autocomplete="one-time-code"`)
-   → `POST /v1/auth/register` com `emailCode`. Botão "Reenviar" com contagem
-   de `resendIn` segundos. `INVALID_EMAIL_CODE` ⇒ mensagem + reenviar.
-2. **Login:** link "Esqueci minha senha" → e-mail → `POST /v1/auth/email-code`
-   (`purpose: "password_reset"`) → código + nova senha →
-   `POST /v1/auth/password-reset` → `204` ⇒ volta ao login com aviso
-   "Senha alterada. Entre com a nova senha."
-3. Sempre dizer "Se houver conta com esse e-mail, enviamos um código" no
-   esqueci a senha (o back não revela se a conta existe).
+### P-18 — Telas do código por e-mail — ✅ feito, falta testar na homologação
+O ChatGPT fez o cliente da API (`api.ts`) e a prévia; o **Claude terminou as
+telas** em `AuthView.tsx` (+ `styles.css`, `App.tsx`, `tests/email-code.spec.ts`)
+**com autorização do humano** (2026-10-16): Criar conta → código → cadastro;
+"Esqueci minha senha" → código + nova senha → login. ChatGPT: revise se quiser.
 
-### P-16 — Segurança do front, itens restantes (ChatGPT)
+### P-16 — Segurança do front — ✅ itens 1–8 feitos pelo ChatGPT (testes Playwright), falta testar na homologação
 Os itens 1–2 (rewrite `/v1` e headers de segurança no `vercel.json`) e a P-14
 (campo de código no Criar conta) **já foram feitos pelo Claude**, com autorização
 do humano, no commit `ff680c7`. Revise se quiser. Falta, por prioridade:

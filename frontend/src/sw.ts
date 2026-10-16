@@ -1,3 +1,4 @@
+import { prunePendingData, savePendingValue, takePendingValue } from './lib/pendingStore'
 import { clientsClaim } from 'workbox-core'
 import { cleanupOutdatedCaches, createHandlerBoundToURL, precacheAndRoute } from 'workbox-precaching'
 import { NavigationRoute, registerRoute } from 'workbox-routing'
@@ -13,9 +14,7 @@ type PushPayload = {
   actions?: Array<{ action: string; title: string }>
 }
 
-const shareDatabaseName = 'cartao-shared-text'
-const shareStoreName = 'incoming'
-const pushActionStoreName = 'push-actions'
+self.addEventListener('activate', (event) => event.waitUntil(prunePendingData()))
 
 self.skipWaiting()
 clientsClaim()
@@ -32,108 +31,14 @@ if (precacheManifest.some((entry) => /(^|\/)index\.html$/.test(typeof entry === 
   )
 }
 
-function openShareDatabase(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open(shareDatabaseName, 2)
-
-    request.onupgradeneeded = () => {
-      if (!request.result.objectStoreNames.contains(shareStoreName)) {
-        request.result.createObjectStore(shareStoreName, { keyPath: 'id', autoIncrement: true })
-      }
-      if (!request.result.objectStoreNames.contains(pushActionStoreName)) {
-        request.result.createObjectStore(pushActionStoreName, { keyPath: 'id', autoIncrement: true })
-      }
-    }
-    request.onsuccess = () => resolve(request.result)
-    request.onerror = () => reject(request.error)
-  })
-}
-
-async function saveSharedText(text: string): Promise<void> {
-  const database = await openShareDatabase()
-
-  try {
-    await new Promise<void>((resolve, reject) => {
-      const transaction = database.transaction(shareStoreName, 'readwrite')
-      transaction.objectStore(shareStoreName).add({ text })
-      transaction.oncomplete = () => resolve()
-      transaction.onerror = () => reject(transaction.error)
-      transaction.onabort = () => reject(transaction.error)
-    })
-  } finally {
-    database.close()
-  }
-}
-
-async function takeSharedText(): Promise<string | null> {
-  const database = await openShareDatabase()
-
-  try {
-    return await new Promise<string | null>((resolve, reject) => {
-      let text: string | null = null
-      const transaction = database.transaction(shareStoreName, 'readwrite')
-      const request = transaction.objectStore(shareStoreName).openCursor()
-
-      request.onsuccess = () => {
-        const cursor = request.result
-        if (cursor) {
-          const value = cursor.value as { text?: unknown }
-          text = typeof value.text === 'string' ? value.text : null
-          cursor.delete()
-        }
-      }
-      transaction.oncomplete = () => resolve(text)
-      transaction.onerror = () => reject(transaction.error)
-      transaction.onabort = () => reject(transaction.error)
-    })
-  } finally {
-    database.close()
-  }
-}
-
 type PendingPushAction = { questionId: string; categoryId: string }
-
-async function savePushAction(action: PendingPushAction): Promise<void> {
-  const database = await openShareDatabase()
-  try {
-    await new Promise<void>((resolve, reject) => {
-      const transaction = database.transaction(pushActionStoreName, 'readwrite')
-      transaction.objectStore(pushActionStoreName).add(action)
-      transaction.oncomplete = () => resolve()
-      transaction.onerror = () => reject(transaction.error)
-      transaction.onabort = () => reject(transaction.error)
-    })
-  } finally {
-    database.close()
-  }
-}
-
-async function takePushAction(): Promise<PendingPushAction | null> {
-  const database = await openShareDatabase()
-  try {
-    return await new Promise<PendingPushAction | null>((resolve, reject) => {
-      let action: PendingPushAction | null = null
-      const transaction = database.transaction(pushActionStoreName, 'readwrite')
-      const request = transaction.objectStore(pushActionStoreName).openCursor()
-      request.onsuccess = () => {
-        const cursor = request.result
-        if (!cursor) return
-        const value = cursor.value as Partial<PendingPushAction>
-        if (typeof value.questionId === 'string' && typeof value.categoryId === 'string') {
-          action = { questionId: value.questionId, categoryId: value.categoryId }
-        }
-        cursor.delete()
-      }
-      transaction.oncomplete = () => resolve(action)
-      transaction.onerror = () => reject(transaction.error)
-      transaction.onabort = () => reject(transaction.error)
-    })
-  } finally {
-    database.close()
-  }
-}
+const saveSharedText = (text: string) => savePendingValue('incoming', { text })
+const savePushAction = (action: PendingPushAction) => savePendingValue('push-actions', action)
+const takeSharedText = async () => (await takePendingValue<{ text: string }>('incoming'))?.text ?? null
+const takePushAction = () => takePendingValue<PendingPushAction>('push-actions')
 
 async function receiveShare(request: Request): Promise<Response> {
+  if (request.headers.get('Sec-Fetch-Site') === 'cross-site') return new Response(null, { status: 403 })
   try {
     const form = await request.formData()
     const text = [form.get('title'), form.get('text'), form.get('url')]

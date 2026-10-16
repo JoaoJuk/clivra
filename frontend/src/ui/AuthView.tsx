@@ -1,11 +1,15 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Icon } from "./Icon";
 import "./styles.css";
 
 export type AuthMode = "login" | "register";
-export interface AuthPayload { email: string; password: string; name?: string; setupCode?: string }
+// Passos da tela: o cadastro e o "esqueci a senha" têm um passo de código por e-mail (contrato 1.0.3).
+type AuthStep = "login" | "register" | "register-code" | "forgot" | "reset";
+export interface AuthPayload { email: string; password: string; name?: string; setupCode?: string; emailCode?: string }
 export interface AuthViewProps {
   onSubmit: (mode: AuthMode, payload: AuthPayload) => Promise<void> | void;
+  onRequestCode: (input: { email: string; purpose: "register" | "password_reset"; setupCode?: string }) => Promise<{ resendIn: number }>;
+  onResetPassword: (input: { email: string; emailCode: string; newPassword: string }) => Promise<void>;
   loading?: boolean;
   error?: string | null;
   offlineAvailable?: boolean;
@@ -21,8 +25,38 @@ function BrandSignature() {
   );
 }
 
-export function AuthView({ onSubmit, loading = false, error, offlineAvailable, onOpenOffline }: AuthViewProps) {
-  const [mode, setMode] = useState<AuthMode>("login");
+function CodeInput({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  return (
+    <label className="auth-field">
+      <span>Código de 6 dígitos</span>
+      <span className="code-wrap">
+        <input
+          value={value}
+          onChange={(event) => onChange(event.target.value.replace(/\D/g, "").slice(0, 6))}
+          aria-label="Código de 6 dígitos"
+          inputMode="numeric"
+          autoComplete="one-time-code"
+          pattern="[0-9]{6}"
+          required
+        />
+        <span className="code-blocks" aria-hidden="true">
+          {Array.from({ length: 6 }, (_, index) => <span key={index}>{value[index] || ""}</span>)}
+        </span>
+      </span>
+    </label>
+  );
+}
+
+const copy: Record<AuthStep, { title: string; description: (email: string) => string; submit: string }> = {
+  login: { title: "Bom ter você de volta.", description: () => "Seus cartões e gastos, organizados em um só lugar.", submit: "Entrar na conta" },
+  register: { title: "Comece por aqui.", description: () => "Crie sua conta para acompanhar cada compra com clareza.", submit: "Continuar" },
+  "register-code": { title: "Confira seu e-mail.", description: (email) => `Digite o código enviado para ${email}.`, submit: "Confirmar e criar conta" },
+  forgot: { title: "Recupere seu acesso.", description: () => "Informe seu e-mail para receber um código de recuperação.", submit: "Enviar código" },
+  reset: { title: "Defina uma nova senha.", description: () => "Se houver conta com esse e-mail, enviamos um código. Use-o abaixo para alterar sua senha.", submit: "Alterar senha" },
+};
+
+export function AuthView({ onSubmit, onRequestCode, onResetPassword, loading = false, error, offlineAvailable, onOpenOffline }: AuthViewProps) {
+  const [step, setStep] = useState<AuthStep>("login");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -30,22 +64,70 @@ export function AuthView({ onSubmit, loading = false, error, offlineAvailable, o
   const [showPassword, setShowPassword] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
   const [localBusy, setLocalBusy] = useState(false);
+  const [emailCode, setEmailCode] = useState("");
+  const [notice, setNotice] = useState<string | null>(null);
+  const [resendAt, setResendAt] = useState(0);
+  const [now, setNow] = useState(() => Date.now());
 
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  const resendIn = Math.max(0, Math.ceil((resendAt - now) / 1000));
+  useEffect(() => {
+    if (resendAt <= Date.now()) return;
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [resendAt]);
+
+  function goTo(next: AuthStep) {
+    setStep(next);
+    setLocalError(null);
+    setEmailCode("");
+    setShowPassword(false);
+    if (next === "login" || next === "register") { setPassword(""); setSetupCode(""); }
+  }
+
+  async function requestCode(purpose: "register" | "password_reset") {
+    const result = await onRequestCode({ email: email.trim(), purpose, ...(purpose === "register" ? { setupCode: setupCode.trim() } : {}) });
+    setNow(Date.now());
+    setResendAt(Date.now() + result.resendIn * 1000);
+  }
+
+  async function run(action: () => Promise<void>) {
     setLocalError(null);
     if (loading || localBusy) return;
-    if (mode === "register" && !name.trim()) { setLocalError("Informe seu nome."); return; }
-    if (mode === "register" && password.length < 8) { setLocalError("A senha precisa ter pelo menos 8 caracteres."); return; }
     setLocalBusy(true);
     try {
-      await onSubmit(mode, { email: email.trim(), password, ...(mode === "register" ? { name: name.trim(), setupCode: setupCode.trim() } : {}) });
+      await action();
     } catch (cause) {
       setLocalError(cause instanceof Error ? cause.message : "Não foi possível acessar sua conta.");
     } finally {
       setLocalBusy(false);
     }
   }
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setNotice(null);
+    if (step === "register" && !name.trim()) { setLocalError("Informe seu nome."); return; }
+    if ((step === "register" || step === "reset") && password.length < 8) { setLocalError("A senha precisa ter pelo menos 8 caracteres."); return; }
+    if ((step === "register-code" || step === "reset") && emailCode.length !== 6) { setLocalError("Digite os 6 dígitos do código."); return; }
+    await run(async () => {
+      if (step === "login") await onSubmit("login", { email: email.trim(), password });
+      else if (step === "register") { await requestCode("register"); setStep("register-code"); }
+      else if (step === "register-code") await onSubmit("register", { email: email.trim(), password, name: name.trim(), setupCode: setupCode.trim(), emailCode });
+      else if (step === "forgot") { await requestCode("password_reset"); setPassword(""); setStep("reset"); }
+      else {
+        await onResetPassword({ email: email.trim(), emailCode, newPassword: password });
+        goTo("login");
+        setNotice("Senha alterada. Entre com a nova senha.");
+      }
+    });
+  }
+
+  function resend() {
+    void run(() => requestCode(step === "register-code" ? "register" : "password_reset"));
+  }
+
+  const text = copy[step];
+  const codeStep = step === "register-code" || step === "reset";
 
   return (
     <main className="auth-layout auth-refined">
@@ -55,44 +137,59 @@ export function AuthView({ onSubmit, loading = false, error, offlineAvailable, o
 
           <div className="auth-intro">
             <span className="auth-section-label">ACESSO À CONTA</span>
-            <h1 id="auth-title">{mode === "login" ? "Bom ter você de volta." : "Comece por aqui."}</h1>
-            <p>{mode === "login" ? "Seus cartões e gastos, organizados em um só lugar." : "Crie sua conta para acompanhar cada compra com clareza."}</p>
+            <h1 id="auth-title">{text.title}</h1>
+            <p>{text.description(email.trim())}</p>
           </div>
 
           <form onSubmit={submit} className="auth-form">
-            {mode === "register" && (
+            {step === "register" && (
               <label className="auth-field">
                 <span>Nome</span>
                 <input value={name} onChange={(event) => setName(event.target.value)} autoComplete="name" placeholder="Seu nome" required />
               </label>
             )}
-            <label className="auth-field">
-              <span>E-mail</span>
-              <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" inputMode="email" placeholder="voce@exemplo.com" required />
-            </label>
-            <label className="auth-field">
-              <span>Senha</span>
-              <span className="auth-password-wrap">
-                <input type={showPassword ? "text" : "password"} value={password} onChange={(event) => setPassword(event.target.value)} autoComplete={mode === "login" ? "current-password" : "new-password"} placeholder="Mínimo de 8 caracteres" minLength={mode === "register" ? 8 : undefined} required />
-                <button type="button" onClick={() => setShowPassword(!showPassword)} aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}>{showPassword ? "Ocultar" : "Mostrar"}</button>
-              </span>
-            </label>
-            {mode === "register" && (
+            {(step === "login" || step === "register" || step === "forgot") && (
+              <label className="auth-field">
+                <span>E-mail</span>
+                <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" inputMode="email" placeholder="voce@exemplo.com" required />
+              </label>
+            )}
+            {codeStep && <CodeInput value={emailCode} onChange={setEmailCode} />}
+            {(step === "login" || step === "register" || step === "reset") && (
+              <label className="auth-field">
+                <span>{step === "reset" ? "Nova senha" : "Senha"}</span>
+                <span className="auth-password-wrap">
+                  <input type={showPassword ? "text" : "password"} value={password} onChange={(event) => setPassword(event.target.value)} autoComplete={step === "login" ? "current-password" : "new-password"} placeholder="Mínimo de 8 caracteres" minLength={step === "login" ? undefined : 8} required />
+                  <button type="button" onClick={() => setShowPassword(!showPassword)} aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}>{showPassword ? "Ocultar" : "Mostrar"}</button>
+                </span>
+              </label>
+            )}
+            {step === "login" && <button type="button" className="auth-link auth-link-end" onClick={() => goTo("forgot")}>Esqueci minha senha</button>}
+            {step === "register" && (
               <label className="auth-field">
                 <span>Código de configuração</span>
                 <input value={setupCode} onChange={(event) => setSetupCode(event.target.value)} autoComplete="off" autoCapitalize="off" autoCorrect="off" spellCheck={false} placeholder="Fornecido na instalação do servidor" />
               </label>
             )}
+            {codeStep && <p className="auth-help">O código vale por 10 minutos. Confira também a pasta de spam.</p>}
+            {notice && <p className="auth-notice" role="status">{notice}</p>}
             {(localError || error) && <p className="form-error" role="alert">{localError || error}</p>}
             <button type="submit" className="auth-submit" disabled={loading || localBusy}>
-              <span>{loading || localBusy ? "Aguarde..." : mode === "login" ? "Entrar na conta" : "Criar conta"}</span>
+              <span>{loading || localBusy ? "Aguarde..." : text.submit}</span>
               <Icon name="arrowRight" size={19} />
             </button>
+            {codeStep && (
+              <button type="button" className="auth-link" onClick={resend} disabled={resendIn > 0 || localBusy}>
+                {resendIn > 0 ? `Reenviar código em ${resendIn} s` : "Reenviar código"}
+              </button>
+            )}
           </form>
 
           <div className="auth-switch">
-            <span>{mode === "login" ? "Ainda não tem uma conta?" : "Já tem uma conta?"}</span>
-            <button type="button" onClick={() => { setMode(mode === "login" ? "register" : "login"); setPassword(""); setSetupCode(""); setShowPassword(false); setLocalError(null); }}>{mode === "login" ? "Criar conta" : "Entrar"}</button>
+            {step === "login" && <><span>Ainda não tem uma conta?</span><button type="button" onClick={() => goTo("register")}>Criar conta</button></>}
+            {step === "register" && <><span>Já tem uma conta?</span><button type="button" onClick={() => goTo("login")}>Entrar</button></>}
+            {step === "register-code" && <button type="button" onClick={() => goTo("register")}>Voltar ao cadastro</button>}
+            {(step === "forgot" || step === "reset") && <button type="button" onClick={() => goTo("login")}>Voltar ao login</button>}
           </div>
           {offlineAvailable && onOpenOffline && <button type="button" className="auth-offline" onClick={onOpenOffline}><Icon name="wifiOff" size={17} /> Ver últimos dados offline</button>}
         </div>
