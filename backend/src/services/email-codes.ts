@@ -33,7 +33,7 @@ const actions: Record<EmailCodePurpose, string> = {
 export function createEmailCodeService(deps: {
   db: Db;
   mailer: Mailer;
-  secret: string;
+  secret: Buffer;
   // Falha em segundo plano vai para o log (sem destinatário nem código — P4).
   onBackgroundError: (error: unknown) => void;
 }) {

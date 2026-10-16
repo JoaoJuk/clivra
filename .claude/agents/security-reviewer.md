@@ -45,6 +45,34 @@ commitadas mais o último commit: `git diff HEAD~1 -- backend/` e
 9. **Segredos:** chave/senha no código ou em arquivo versionado
    (`git ls-files | grep -i env`).
 
+## Varredura automática (skill `semgrep` da Trail of Bits)
+
+Antes da leitura manual, rode o Semgrep seguindo a skill instalada em
+`~/.claude/skills/semgrep/` (leia o `SKILL.md` e `workflows/scan-workflow.md`
+— é a referência de como rodar e triar). O plano abaixo foi **aprovado pelo
+humano em 2026-10-16**; ele substitui o portão de aprovação da skill. Não
+mude a lista de regras: se achar que falta alguma, sugira no relatório.
+
+- Alvo: `C:/Cartao/backend` · Modo: **run-all** · Motor: Semgrep OSS
+- Regras: `{"baseline":["p/security-audit","p/secrets"],"typescript":["p/typescript","p/nodejs"],"third_party":["https://github.com/trailofbits/semgrep-rules","https://github.com/elttam/semgrep-rules","https://github.com/apiiro/malicious-code-ruleset"]}`
+- Saída: uma pasta temporária **fora do repositório** (ex.: o scratchpad da
+  sessão). Nunca dentro de `C:/Cartao`.
+- Rode só pelo `scripts/run-scans.sh` da skill (ele garante `--metrics=off`;
+  o código não sai da máquina) e junte com `scripts/merge_sarif.py`.
+- No Windows/Git Bash, antes: `export PATH="$LOCALAPPDATA/Packages/PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0/LocalCache/local-packages/Python313/Scripts:$LOCALAPPDATA/Microsoft/WinGet/Packages/jqlang.jq_Microsoft.Winget.Source_8wekyb3d8bbwe:$PATH"`
+  (com `LOCALAPPDATA` em formato `/c/Users/...`).
+- Ajustes de Windows já descobertos (não mudam as regras): `--target` e
+  `--output-dir` no formato `/c/...`; `export PYTHONUTF8=1` (regras com emoji
+  quebram no cp1252); o `jq` do WinGet escreve CRLF, então ponha antes no PATH
+  um wrapper `jq` que chame `jq.exe -b "$@"` (numa pasta `bin/` do scratchpad);
+  sem `uv`, rode o merge com `python -I scripts/merge_sarif.py`.
+- **Triagem:** cada achado do Semgrep é só uma pista. Abra o código e
+  classifique como verdadeiro ou falso positivo. Reporte só os verdadeiros
+  (no formato abaixo, marcando `[semgrep:<rule-id>]`). No fim, diga quantos
+  achados o scan teve e quantos eram falsos positivos, e por quê, em uma linha
+  por grupo.
+- Se o scan falhar, diga isso claramente e siga com a revisão manual.
+
 ## Como verificar
 
 - Leia o código de verdade; não suponha. Siga o fluxo rota → service → db.

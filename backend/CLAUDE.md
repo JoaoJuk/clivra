@@ -23,7 +23,13 @@ sozinhas no boot (`src/server.ts`).
 
 - **URL:** `https://clivra-api.163-176-182-24.sslip.io` (o front chega via proxy
   `/v1/*` da Vercel). Ubuntu 24.04 ARM, host SSH `oracle`.
-- **Deploy:** commit, depois `bash deploy/deploy.sh` (Git Bash, em `backend/`).
+- **Homologação (D15):** `clivra-hml.service`, porta 3334, usuário/banco
+  `clivra_hml`, segredos em `/etc/clivra/clivra-hml.env`,
+  `https://clivra-api-hml.163-176-182-24.sslip.io`. Preparada uma vez com
+  `bash deploy/setup-hml.sh`.
+- **Deploy:** commit, depois `bash deploy/deploy.sh hml` (branch `develop`) e,
+  depois de aprovado e mesclado em `main`, `bash deploy/deploy.sh prod`
+  (recusa se HEAD ≠ `origin/main`). Git Bash, em `backend/`.
   Faz typecheck + testes + build, sobe para `/opt/clivra/releases/<sha>`,
   `npm ci --ignore-scripts`, troca o link `current`, reinicia e confere o health.
   Mantém 3 releases. Rollback: apontar `/opt/clivra/current` para a anterior e

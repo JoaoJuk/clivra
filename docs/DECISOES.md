@@ -34,6 +34,7 @@ histórico completo (discussões, pendências já resolvidas) está no git:
 | D11 | Categorização | Regra aprendida → dicionário local → **Jev** → pergunta (detalhe abaixo) |
 | D12 | Hospedagem | Vercel (PWA + proxy `/v1/*`) + VPS **Oracle Always Free** (API + Postgres) em `clivra-api.163-176-182-24.sslip.io`. Sessão em cookie `HttpOnly` |
 | D14 | Código por e-mail | Código de 6 dígitos no **Criar conta** (prova que o e-mail é seu antes de a conta existir) e no **Esqueci a senha**. Envio por SMTP do Gmail `clivra.net@gmail.com` com senha de app (grátis, ~500/dia), segredo em `/etc/clivra/clivra.env`. **SMS descartado** (pago, fere P6). O e-mail leva só o código (P4) |
+| D15 | Homologação | Branch `develop` → **homologação** (Vercel Preview + API `clivra-api-hml…sslip.io`, banco `clivra_hml` com dados de teste, usuário Linux próprio). `main` → **produção**. Nada vai para `main` sem o humano testar na homologação. `deploy.sh prod` só aceita `origin/main` |
 | D13 | Infra da VPS | Node 24 e Postgres 16 nativos (sem Docker), systemd com sandbox, Caddy, backup diário local. Ver `backend/CLAUDE.md` |
 
 Substituídas: D2 "sem LLM" (→ D11); D3, D4, D8 e D9 "Cloudflare Tunnel" (→ D12/D13).
@@ -67,6 +68,15 @@ Entram no contrato como **v1.1.0** (só adições) quando o ChatGPT confirmar.
 ---
 
 ## Pendências abertas
+
+### P-19 — Preview da Vercel chamar a API de homologação (ChatGPT)
+Hoje o `vercel.json` manda `/v1/*` sempre para a produção, inclusive no
+Preview. Precisa: deploy de Preview (branch `develop`) → proxy para
+`https://clivra-api-hml.163-176-182-24.sslip.io`; Production → a API atual.
+Rewrite do `vercel.json` não varia por ambiente; provavelmente exige Vercel
+Routing Middleware lendo `VERCEL_ENV`. Dá para juntar com a **P-15** (o
+mesmo middleware manda o cabeçalho secreto). Deixar a Deployment Protection
+da Vercel ligada nos Previews.
 
 ### P-18 — Telas do código por e-mail (ChatGPT) — **bloqueia o cadastro**
 Contrato 1.0.3, §1. Back pronto e em produção. **Urgente:** o banco de produção

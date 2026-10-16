@@ -1,0 +1,12 @@
+# Bloco da HOMOLOGAÇÃO, acrescentado ao /etc/caddy/Caddyfile pelo setup-hml.sh.
+# Sem diretiva `log` (P4), igual à produção.
+clivra-api-hml.163-176-182-24.sslip.io {
+	request_body {
+		max_size 6MB
+	}
+	header {
+		-Server
+		Strict-Transport-Security "max-age=31536000"
+	}
+	reverse_proxy 127.0.0.1:3334
+}

@@ -1,3 +1,4 @@
+import { hkdfSync } from 'node:crypto';
 import cookie from '@fastify/cookie';
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
@@ -106,7 +107,8 @@ export async function buildApp(config: Config, database: Database, overrides: { 
     ? createEmailCodeService({
         db: database.db,
         mailer,
-        secret: config.JWT_SECRET,
+        // Subchave própria (HKDF): o JWT_SECRET não serve direto a dois propósitos.
+        secret: Buffer.from(hkdfSync('sha256', config.JWT_SECRET, '', 'clivra/email-code', 32)),
         onBackgroundError: (error) => app.log.error({ err: error }, 'falha ao gerar/enviar código por e-mail'),
       })
     : undefined;
