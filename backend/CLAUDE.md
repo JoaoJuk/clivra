@@ -86,14 +86,6 @@ src/db/        queries Drizzle; uma função por operação; recebe `db: Db`
 | Log sem query string, corpo, cookie, Authorization (P4) | `app.ts` (serializers) |
 | Um único dono garantido no banco | `db/schema.ts` (`users_single_owner_key`) |
 
-## Telas → endpoints (status)
+## Status e próximos passos
 
-| Tela | Endpoints | Back-end |
-|---|---|---|
-| Login / Criar conta | `health`, `auth/*` | ✅ pronto |
-| Cartões | `cards` | ⬜ |
-| Lançar compra | `POST transactions`, `ingest/raw` | ⬜ |
-| Transações | `GET transactions`, `categories` | ⬜ |
-| Pendências | `questions/*`, `rules`, categorizador + Jev (D11) | ⬜ |
-| Início / Gastos | `summary`, `summary/months`, `insights`, `budgets` | ⬜ |
-| Ajustes | `push/*`, `export`, `rules` | ⬜ |
+Ver `docs/DECISOES.md` §Status por tela e §Roadmap do back-end.
