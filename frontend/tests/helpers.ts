@@ -1,8 +1,14 @@
 import { expect, type BrowserContext, type Page } from '@playwright/test';
 
 export async function mockApi(context: BrowserContext) {
-  const state = { registrationMode: 'owner_setup', role: 'admin', authorized: false, refreshStatus: 200, logoutStatus: 204, codeStatus: 202, registerStatus: 201, resetStatus: 204, calls: [] as Array<{ path: string; body: Record<string, unknown> }> };
-  const session = () => ({ accessToken: 'test-access', expiresIn: 900, user: { id: 'test-user', name: 'Teste', email: 'teste@example.com', role: state.role } });
+  const state = {
+    registrationMode: 'owner_setup', role: 'admin', authorized: false,
+    userId: 'test-user', userName: 'Teste', categoryId: 'mercado', categoryName: 'Mercado',
+    refreshStatus: 200, logoutStatus: 204, pushStatus: 204,
+    codeStatus: 202, registerStatus: 201, resetStatus: 204,
+    calls: [] as Array<{ path: string; body: Record<string, unknown> }>,
+  };
+  const session = () => ({ accessToken: 'test-access', expiresIn: 900, user: { id: state.userId, name: state.userName, email: 'teste@example.com', role: state.role } });
   const admin = {
     users: [
       { id: 'test-user', email: 'teste@example.com', name: 'Teste', role: 'admin', createdAt: '2026-10-16T12:00:00Z', lastLoginAt: '2026-10-16T18:00:00Z', disabledAt: null, activeSessions: 1 },
@@ -57,7 +63,10 @@ export async function mockApi(context: BrowserContext) {
       if (state.logoutStatus !== 204) return error(state.logoutStatus, 'SERVICE_UNAVAILABLE');
       state.authorized = false; return reply(204);
     }
-    if (path.endsWith('/categories')) return reply(200, { data: [{ id: 'mercado', name: 'Mercado', group: 'essenciais', icon: 'cart', color: '#123456' }] });
+    if (path.endsWith('/push/subscribe') && route.request().method() === 'DELETE') {
+      return state.pushStatus === 204 ? reply(204) : error(state.pushStatus, 'NOT_FOUND');
+    }
+    if (path.endsWith('/categories')) return reply(200, { data: [{ id: state.categoryId, name: state.categoryName, group: 'essenciais', icon: 'cart', color: '#123456' }] });
     if (path.endsWith('/summary')) return reply(200, null);
     if (path.endsWith('/count')) return reply(200, { open: 0 });
     return reply(200, { data: [], page: { hasMore: false, nextCursor: null }, summary: { totalCents: 0, count: 0 } });

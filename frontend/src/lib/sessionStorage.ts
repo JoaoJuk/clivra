@@ -16,6 +16,13 @@ export function writeStorage(key: string, value: string | null): void {
   } catch { /* Armazenamento indisponível. */ }
 }
 
+export function readStoredUserId(): string | null {
+  try {
+    const user = JSON.parse(readStorage(userStorageKey) || 'null');
+    return typeof user?.id === 'string' ? user.id : null;
+  } catch { return null; }
+}
+
 // Migração: nenhum e-mail, token ou cache financeiro legado permanece no disco.
 writeStorage('cartao.refreshToken', null);
 writeStorage('cartao.queryCache.v1', null);

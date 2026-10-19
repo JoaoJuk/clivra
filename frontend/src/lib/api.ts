@@ -307,16 +307,33 @@ export class ApiClient {
   }
 
   async exportTransactions(filters: { format?: 'csv' | 'json'; from?: string; to?: string; cardId?: string } = {}): Promise<Blob> {
+    if (this.loggingOut) throw new ApiError('Saída em andamento. Aguarde.', 409, 'SESSION_ENDING');
     if (!this.accessToken || Date.now() >= this.accessExpiresAt - 30_000) await this.refresh();
     const path = `/v1/export${queryString(filters)}`;
-    const doFetch = () => fetch(`${baseUrl}${path}`, { headers: { Authorization: `Bearer ${this.accessToken}` } });
+    const generation = this.generation;
+    const assertSessionActive = () => {
+      if (this.loggingOut) throw new ApiError('Saída em andamento. Aguarde.', 409, 'SESSION_ENDING');
+      if (generation !== this.generation) throw new ApiError('A sessão foi encerrada.', 401, 'SESSION_ENDED');
+    };
+    const doFetch = () => {
+      assertSessionActive();
+      return fetch(`${baseUrl}${path}`, {
+        headers: { Authorization: `Bearer ${this.accessToken}` },
+        credentials: 'include',
+        cache: 'no-store',
+      });
+    };
     let response = await doFetch();
+    assertSessionActive();
     if (response.status === 401) {
       await this.refresh();
       response = await doFetch();
+      assertSessionActive();
     }
     if (!response.ok) throw await readError(response);
-    return response.blob();
+    const blob = await response.blob();
+    assertSessionActive();
+    return blob;
   }
 }
 

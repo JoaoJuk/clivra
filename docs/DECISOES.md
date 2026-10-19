@@ -72,10 +72,15 @@ Entram no contrato como **v1.1.0** (só adições) quando o ChatGPT confirmar.
 
 ## Pendências abertas
 
-### P-21 — Revisão de segurança de 2026-10-19 (externa) — itens do front (ChatGPT)
+### P-21 — Revisão de segurança de 2026-10-19 (externa) — ✅ front feito
+Feito pelo ChatGPT em 2026-10-19, com testes Playwright em desktop e iPhone:
+cache de categorias isolado por `user.id` e descartado na troca de pessoa;
+logout continua após falha do push; export usa as proteções de sessão do cliente;
+e `npm run dev` voltou a escutar apenas em localhost.
+
 O back já corrigiu a parte dele (ver P-15 e o Changelog 1.0.5 do contrato:
 CSRF em `refresh`/`logout`, rate limit no `logout`, limpeza de
-`refresh_tokens`/convites vencidos, `deploy.sh` fora do `/tmp`). Falta no front:
+`refresh_tokens`/convites vencidos, `deploy.sh` fora do `/tmp`). Itens corrigidos no front:
 1. **Categorias de uma pessoa aparecendo para outra no mesmo aparelho (D17)**
    (`main.tsx`, `lib/query.ts`, `App.tsx`): a query `['categories']` é
    persistida no `localStorage` (`cartao.queryCache.v2`) sem o `user.id`, com
@@ -154,7 +159,7 @@ do humano, no commit `ff680c7`. Revise se quiser. Falta, por prioridade:
 > abertos; 7–8 são novos. XSS, tokens, service worker, CSP/headers, segredos
 > no bundle e dependências estão OK; `npm audit` sem vulnerabilidades.
 
-### P-15 — VPS aceitar só tráfego vindo da Vercel — ✅ back pronto, falta front + segredo
+### P-15 — VPS aceitar só tráfego vindo da Vercel — ✅ código pronto, falta configurar o segredo
 Hoje quem souber a URL sslip.io (aparece nos logs de Certificate
 Transparency) chama a API direto. E, com `TRUST_PROXY=1` e o Caddy (que
 descarta o `X-Forwarded-For` de quem chega), o IP que a API enxerga é o da
@@ -165,7 +170,7 @@ errados em 15 min). Não dá para forjar IP hoje, mas dá para travar os outros.
 `X-Clivra-Proxy-Secret` correto (exceto `GET /v1/health`, usado pelo deploy) e
 usa `X-Clivra-Client-Ip` como IP do cliente nos rate limits. Sem a variável,
 nada muda.
-**Front (ChatGPT, `frontend/middleware.ts`):** no `rewrite`, passar
+**Front (feito pelo ChatGPT em 2026-10-19, `frontend/middleware.ts`):** no `rewrite`, passa
 `request: { headers }` com uma cópia dos headers de entrada acrescida de
 `X-Clivra-Proxy-Secret: process.env.CLIVRA_PROXY_SECRET` (prod) /
 `CLIVRA_PROXY_SECRET_HML` (preview) e `X-Clivra-Client-Ip: ipAddress(request)`
@@ -179,9 +184,11 @@ Depois de ativado: tornar `PROXY_SECRET` obrigatório em produção no
 sair do `.env`. A Vercel tem de **sobrescrever** `X-Clivra-Client-Ip` (não
 acrescentar). Os rate limits por IP agrupam IPv6 por /64.
 
-### P-17 — Tirar o `refreshToken` do corpo da resposta (Claude)
-O front já usa só o cookie. Remover o campo do corpo de `login`/`register`/
-`refresh` (contrato v2.0.0) depois que o ChatGPT confirmar que não depende dele.
+### P-17 — Tirar o `refreshToken` do corpo da resposta (Claude) — ✅ front confirmou
+Confirmado pelo ChatGPT em 2026-10-19: o front usa só o cookie e não lê o
+`refreshToken` das respostas de `login`/`register`/`refresh`; o tipo
+`AuthSession` também não contém mais esse campo. O back pode removê-lo no
+contrato v2.0.0.
 
 ### Riscos aceitos
 - **Sem 2FA no login** (P-22, decidido pelo humano em 2026-10-19): senha

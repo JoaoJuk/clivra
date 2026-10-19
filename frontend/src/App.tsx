@@ -6,7 +6,7 @@ import { takePendingPushAction } from './lib/pushAction';
 import { takeSharedText } from './lib/share';
 import { queryPersister } from './lib/query';
 import type { CreateCardInput, CreateTransactionInput } from './lib/types';
-import { logoutStorageKey, userStorageKey, readOfflineSession, type SessionUser } from './lib/sessionStorage';
+import { logoutStorageKey, userStorageKey, readOfflineSession, readStoredUserId, type SessionUser } from './lib/sessionStorage';
 import { prunePendingData } from './lib/pendingStore';
 import { AppView } from './ui/AppView';
 import { AuthView } from './ui/AuthView';
@@ -85,9 +85,17 @@ export function App() {
   useEffect(() => {
     let active = true;
     async function restore() {
+      const previousUserId = readStoredUserId();
       try {
         const session = await api.refresh();
-        if (active) { setUser(session.user); setOfflineSession(false); }
+        if (active) {
+          if (previousUserId !== session.user.id) {
+            queryClient.clear();
+            await queryPersisterRemove();
+          }
+          setUser(session.user);
+          setOfflineSession(false);
+        }
       } catch (error) {
         if (active) {
           const cached = readOfflineSession();
@@ -104,7 +112,7 @@ export function App() {
     }
     void restore();
     return () => { active = false; };
-  }, [clearLocalData]);
+  }, [clearLocalData, queryClient]);
 
   useEffect(() => {
     if (!user) return;
@@ -175,7 +183,7 @@ export function App() {
   const offline = !browserOnline || offlineSession || healthQuery.isError;
 
   const categoriesQuery = useQuery({
-    queryKey: ['categories'], queryFn: () => api.categories(), enabled: authenticated,
+    queryKey: ['categories', user?.id], queryFn: () => api.categories(), enabled: authenticated,
     staleTime: 24 * 60 * 60 * 1000,
   });
   const cardsQuery = useQuery({ queryKey: ['cards'], queryFn: () => api.cards(), enabled: authenticated });
@@ -292,7 +300,7 @@ export function App() {
     onLogout: async () => {
       setActionError(null);
       try {
-        await disablePush();
+        try { await disablePush(); } catch { /* Falha do push não impede encerrar a sessão. */ }
         setPushEnabled(false);
         await prunePendingData(true);
         await api.logout();

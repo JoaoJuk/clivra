@@ -1,4 +1,4 @@
-import { rewrite } from '@vercel/functions';
+import { ipAddress, rewrite } from '@vercel/functions';
 
 export const config = { matcher: '/v1/:path*' };
 
@@ -9,9 +9,15 @@ export default function middleware(request: Request): Response {
     : environment === 'preview'
       ? 'https://clivra-api-hml.163-176-182-24.sslip.io'
       : null;
+  const proxySecret = environment === 'production'
+    ? process.env.CLIVRA_PROXY_SECRET
+    : environment === 'preview'
+      ? process.env.CLIVRA_PROXY_SECRET_HML
+      : undefined;
+  const clientIp = ipAddress(request);
 
   // Uma configuração ausente nunca pode mandar um Preview para produção.
-  if (!origin) {
+  if (!origin || !proxySecret || !clientIp) {
     return Response.json({ error: { code: 'SERVICE_UNAVAILABLE', message: 'Ambiente da API não configurado.' } }, {
       status: 503, headers: { 'Cache-Control': 'no-store' },
     });
@@ -21,5 +27,11 @@ export default function middleware(request: Request): Response {
   const destination = new URL(origin);
   destination.pathname = incoming.pathname;
   destination.search = incoming.search;
-  return rewrite(destination, { headers: { 'Cache-Control': 'no-store' } });
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set('X-Clivra-Proxy-Secret', proxySecret);
+  requestHeaders.set('X-Clivra-Client-Ip', clientIp);
+  return rewrite(destination, {
+    headers: { 'Cache-Control': 'no-store' },
+    request: { headers: requestHeaders },
+  });
 }

@@ -40,7 +40,6 @@ export interface SystemStatus {
 
 export interface AuthSession {
   accessToken: string;
-  refreshToken?: string;
   expiresIn: number;
   user: User;
 }

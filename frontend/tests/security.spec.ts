@@ -19,7 +19,43 @@ test('migra armazenamento legado e persiste apenas categorias', async ({ page, c
   expect(saved.user).toEqual({ id: 'test-user', name: 'Teste' });
   const client = JSON.parse(saved.cache!).clientState;
   expect(client.queries.every((query: { queryKey: string[] }) => query.queryKey[0] === 'categories')).toBe(true);
+  expect(client.queries.every((query: { queryKey: string[] }) => query.queryKey[1] === 'test-user')).toBe(true);
   expect(client.mutations).toEqual([]);
+});
+
+test('descarta categorias persistidas quando o refresh troca de pessoa', async ({ page, context }) => {
+  const state = await mockApi(context);
+  await login(page);
+  await expect.poll(() => page.evaluate(() => localStorage.getItem('cartao.queryCache.v2'))).toContain('mercado');
+
+  state.userId = 'second-user';
+  state.userName = 'Outra pessoa';
+  state.categoryId = 'viagem';
+  state.categoryName = 'Viagem';
+  await page.reload();
+
+  await openSettings(page);
+  await expect(page.getByText('Outra pessoa', { exact: true }).filter({ visible: true })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => localStorage.getItem('cartao.queryCache.v2'))).toContain('second-user');
+  const cache = await page.evaluate(() => localStorage.getItem('cartao.queryCache.v2'));
+  expect(cache).toContain('viagem');
+  expect(cache).not.toContain('mercado');
+  expect(cache).not.toContain('test-user');
+});
+
+test('descarta cache de categorias sem identificação do último usuário', async ({ page, context }) => {
+  const state = await mockApi(context);
+  await login(page);
+  await expect.poll(() => page.evaluate(() => localStorage.getItem('cartao.queryCache.v2'))).toContain('mercado');
+
+  await page.evaluate(() => localStorage.removeItem('cartao.lastUser'));
+  state.categoryId = 'transporte';
+  state.categoryName = 'Transporte';
+  await page.reload();
+
+  await expect.poll(() => page.evaluate(() => localStorage.getItem('cartao.queryCache.v2'))).toContain('transporte');
+  const cache = await page.evaluate(() => localStorage.getItem('cartao.queryCache.v2'));
+  expect(cache).not.toContain('mercado');
 });
 
 for (const status of [429, 503]) test(`refresh ${status} online não abre sessão offline`, async ({ page, context }) => {
@@ -113,6 +149,85 @@ test('logout desativa push antes de revogar sessão e mantém acesso se ficar se
   await expect(page.getByRole('button', { name: 'Entrar na conta' })).toBeVisible();
   const paths = state.calls.map(call => call.path);
   expect(paths.indexOf('/v1/push/subscribe')).toBeLessThan(paths.indexOf('/v1/auth/logout'));
+});
+
+test('logout continua quando a API de push falha e remove a inscrição local', async ({ page, context }) => {
+  const state = await mockApi(context);
+  await login(page);
+  state.pushStatus = 404;
+  await page.evaluate(() => {
+    (window as Window & { pushUnsubscribed?: boolean }).pushUnsubscribed = false;
+    Object.defineProperty(navigator.serviceWorker, 'getRegistration', { configurable: true, value: async () => ({
+      pushManager: { getSubscription: async () => ({
+        endpoint: 'https://push.example/test',
+        unsubscribe: async () => { (window as Window & { pushUnsubscribed?: boolean }).pushUnsubscribed = true; return true; },
+      }) },
+    }) });
+  });
+  await openSettings(page);
+  await page.getByRole('button', { name: 'Sair da conta' }).click();
+  await expect(page.getByRole('button', { name: 'Entrar na conta' })).toBeVisible();
+  expect(await page.evaluate(() => (window as Window & { pushUnsubscribed?: boolean }).pushUnsubscribed)).toBe(true);
+  expect(state.calls.some(call => call.path === '/v1/push/subscribe')).toBe(true);
+  expect(state.calls.some(call => call.path === '/v1/auth/logout')).toBe(true);
+});
+
+test('export usa proteções da sessão e rejeita resposta depois do logout', async ({ page, context }) => {
+  await mockApi(context);
+  await login(page);
+  const result = await page.evaluate(async () => {
+    const { api } = await import('/src/lib/api.ts');
+    const originalFetch = window.fetch;
+    let release!: () => void;
+    let captured: RequestInit | undefined;
+    window.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).includes('/v1/export')) {
+        captured = init;
+        return new Promise<Response>((resolve) => { release = () => resolve(new Response('private-export')); });
+      }
+      return originalFetch(input, init);
+    }) as typeof window.fetch;
+    const exporting = api.exportTransactions({ format: 'csv' }).then(() => 'resolved').catch((error: { code?: string }) => error.code);
+    while (!release) await new Promise(resolve => setTimeout(resolve, 0));
+    api.clearSession();
+    release();
+    const outcome = await exporting;
+    window.fetch = originalFetch;
+    return { outcome, cache: captured?.cache, credentials: captured?.credentials };
+  });
+  expect(result).toEqual({ outcome: 'SESSION_ENDED', cache: 'no-store', credentials: 'include' });
+});
+
+test('export não conclui enquanto o logout ainda está em andamento', async ({ page, context }) => {
+  await mockApi(context);
+  await login(page);
+  const outcome = await page.evaluate(async () => {
+    const { api } = await import('/src/lib/api.ts');
+    const originalFetch = window.fetch;
+    let releaseExport!: () => void;
+    let releaseLogout!: () => void;
+    window.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/v1/export')) {
+        return new Promise<Response>((resolve) => { releaseExport = () => resolve(new Response('private-export')); });
+      }
+      if (url.includes('/v1/auth/logout')) {
+        return new Promise<Response>((resolve) => { releaseLogout = () => resolve(new Response(null, { status: 204 })); });
+      }
+      return originalFetch(input, init);
+    }) as typeof window.fetch;
+    const exporting = api.exportTransactions({ format: 'csv' }).then(() => 'resolved').catch((error: { code?: string }) => error.code);
+    while (!releaseExport) await new Promise(resolve => setTimeout(resolve, 0));
+    const loggingOut = api.logout();
+    while (!releaseLogout) await new Promise(resolve => setTimeout(resolve, 0));
+    releaseExport();
+    const result = await exporting;
+    releaseLogout();
+    await loggingOut;
+    window.fetch = originalFetch;
+    return result;
+  });
+  expect(outcome).toBe('SESSION_ENDING');
 });
 
 test('refresh tardio não restaura sessão encerrada em outra aba', async ({ page, context }) => {

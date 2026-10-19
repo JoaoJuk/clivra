@@ -36,7 +36,12 @@ export async function enablePush(): Promise<void> {
 export async function disablePush(): Promise<void> {
   const subscription = await getPushSubscription();
   if (!subscription) return;
-  await api.unsubscribePush(subscription.endpoint);
-  const removed = await subscription.unsubscribe();
-  if (!removed && await getPushSubscription()) throw new Error('Não foi possível desativar as notificações. Tente novamente.');
+  let firstError: unknown;
+  try {
+    const removed = await subscription.unsubscribe();
+    if (!removed && await getPushSubscription()) throw new Error('Não foi possível desativar as notificações. Tente novamente.');
+  } catch (error) { firstError = error; }
+  try { await api.unsubscribePush(subscription.endpoint); }
+  catch (error) { firstError ??= error; }
+  if (firstError) throw firstError;
 }

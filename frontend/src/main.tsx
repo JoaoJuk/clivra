@@ -9,9 +9,11 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     <PersistQueryClientProvider
       client={queryClient}
       persistOptions={{
-        persister: queryPersister, maxAge: 24 * 60 * 60 * 1000, buster: 'categories-only-v2',
+        persister: queryPersister, maxAge: 24 * 60 * 60 * 1000, buster: 'categories-by-user-v3',
         dehydrateOptions: {
-          shouldDehydrateQuery: (query) => query.queryKey[0] === 'categories' && query.state.status === 'success',
+          shouldDehydrateQuery: (query) => query.queryKey[0] === 'categories'
+            && typeof query.queryKey[1] === 'string'
+            && query.state.status === 'success',
           shouldDehydrateMutation: () => false,
         },
       }}
