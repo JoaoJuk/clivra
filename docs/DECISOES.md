@@ -95,14 +95,6 @@ CSRF em `refresh`/`logout`, rate limit no `logout`, limpeza de
    front e o proxy `/v1` para a rede Wi-Fi. Usar o padrão (localhost) e só
    abrir a rede quando for testar no iPhone (`npm run dev -- --host`).
 
-### P-22 — 2FA no login (decisão do humano)
-Hoje o login é só e-mail + senha; senha vazada ⇒ entra como admin. Como a
-sessão dura 30 dias, um 2º fator no login quase não pesa no dia a dia (P3).
-Opções: **A)** código de 6 dígitos por e-mail no login (reusa o serviço de
-`email-codes` e a tela de código que já existe) ou **B)** app autenticador
-(TOTP). Aguardando o humano escolher e se vale para todos ou só o admin.
-Exige mudança no contrato §1 (acordo com o front).
-
 ### P-20 — Família: cadastro por convite e painel do admin — ✅ feito pelo Claude
 O **Claude fez as telas com autorização do humano** (2026-10-16):
 `ui/AdminPanel.tsx` (novo), `SettingsPage.tsx`, `AuthView.tsx`
@@ -192,6 +184,9 @@ O front já usa só o cookie. Remover o campo do corpo de `login`/`register`/
 `refresh` (contrato v2.0.0) depois que o ChatGPT confirmar que não depende dele.
 
 ### Riscos aceitos
+- **Sem 2FA no login** (P-22, decidido pelo humano em 2026-10-19): senha
+  vazada do admin dá acesso à conta e ao painel. Mitigação: rate limit por
+  IP/conta e sessão de 30 dias (login raro). Reabrir se a família crescer.
 - O access token vale até 15 min depois do **logout** (bloqueio, troca de
   senha e "desconectar" já derrubam o access token na hora).
 - "Esqueci a senha" tem teto de 5 códigos/dia por e-mail: quem souber seu
