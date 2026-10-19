@@ -1,4 +1,4 @@
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, isNull, lt } from 'drizzle-orm';
 import type { Db } from './client.js';
 import { refreshTokens, type RefreshTokenRow } from './schema.js';
 
@@ -38,4 +38,9 @@ export async function revokeAllForUser(db: Db, userId: string, now: Date): Promi
     .update(refreshTokens)
     .set({ revokedAt: now })
     .where(and(eq(refreshTokens.userId, userId), isNull(refreshTokens.revokedAt)));
+}
+
+// Token vencido não serve nem para detectar reuso: pode sair do banco.
+export async function deleteRefreshTokensExpiredBefore(db: Db, before: Date): Promise<void> {
+  await db.delete(refreshTokens).where(lt(refreshTokens.expiresAt, before));
 }

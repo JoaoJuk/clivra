@@ -36,6 +36,14 @@ const envSchema = z.object({
     .transform((value) => value.split(',').map((origin) => origin.trim()).filter(Boolean)),
   COOKIE_SECURE: booleanFlag,
   TRUST_PROXY: trustProxy,
+  // P-15: segredo que o proxy da Vercel manda em X-Clivra-Proxy-Secret. Com ele
+  // definido, a API recusa quem a chama direto pela URL sslip.io e passa a usar
+  // o IP do cliente que a Vercel informa (X-Clivra-Client-Ip) nos rate limits.
+  PROXY_SECRET: z
+    .string()
+    .optional()
+    .transform((value) => value || undefined)
+    .pipe(z.string().min(32, 'PROXY_SECRET precisa ter pelo menos 32 caracteres.').optional()),
   // Código exigido para criar a conta do dono. Em produção, sem ele, o cadastro
   // fica fechado — ninguém da internet vira dono antes de você.
   OWNER_SETUP_CODE: z

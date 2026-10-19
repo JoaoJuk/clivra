@@ -1,6 +1,6 @@
 # CONTRATO DA API — v1
 
-**Versão:** 1.0.4 · **Data:** 2026-10-16 · **Status:** ✅ ESTÁVEL — o front-end pode implementar contra isto.
+**Versão:** 1.0.5 · **Data:** 2026-10-19 · **Status:** ✅ ESTÁVEL — o front-end pode implementar contra isto.
 
 > Este arquivo é o **contrato** entre back-end (Claude) e front-end (ChatGPT).
 > Nenhum lado adivinha nada. Mudança que quebra compatibilidade exige acordo dos
@@ -182,6 +182,10 @@ Refresh inválido/expirado → `401 INVALID_REFRESH_TOKEN` ⇒ front manda pro l
 ### `POST /v1/auth/logout`
 Request: `{ "refreshToken": "eyJ..." }` → Response `204`. Invalida o refresh.
 
+> **1.0.5:** em `refresh` e `logout`, token **vindo do cookie** com
+> `Sec-Fetch-Site: cross-site` ou `same-site` ⇒ `403 FORBIDDEN` (CSRF). O PWA
+> chama de `same-origin`, então nada muda. `logout` tem limite de 30/15 min.
+
 ### `GET /v1/auth/me`
 Response `200`:
 ```json
@@ -221,7 +225,7 @@ Use para o indicador de online/offline.
 | 401 | `UNAUTHENTICATED` | Sem token / token expirado. **Tentar refresh, depois login.** |
 | 401 | `INVALID_CREDENTIALS` | E-mail ou senha errados. |
 | 401 | `INVALID_REFRESH_TOKEN` | Ir para o login. |
-| 403 | `FORBIDDEN` | Sem permissão. |
+| 403 | `FORBIDDEN` | Sem permissão (inclui conta bloqueada, pedido de outro site no `refresh`/`logout` e acesso direto à API sem passar pelo proxy da Vercel — P-15). O front mostra a `message`. |
 | 403 | `REGISTRATION_CLOSED` | Cadastro fechado (corrida de dois admins, servidor sem e-mail, ou produção sem código de configuração). |
 | 404 | `NOT_FOUND` | Recurso inexistente. |
 | 409 | `CONFLICT` | Conflito genérico (ex.: e-mail já existe). |
@@ -1123,6 +1127,12 @@ Revoga o convite. Já usado/revogado/vencido ou inexistente ⇒ `404`.
 ---
 
 ## Changelog
+
+### 1.0.5 — 2026-10-19
+- §1 `refresh`/`logout`: pedido de outro site usando o cookie ⇒ `403 FORBIDDEN`;
+  `logout` com rate limit próprio (30/15 min). O PWA não é afetado.
+- Infra (P-15): com `PROXY_SECRET` configurado, a API recusa com
+  `403 FORBIDDEN` quem não vier pelo proxy da Vercel (exceto `GET /v1/health`).
 
 ### 1.0.4 — 2026-10-16
 - **Família (D16):** a primeira conta vira admin; depois só entra quem o admin

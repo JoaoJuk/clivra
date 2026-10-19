@@ -104,6 +104,9 @@ src/db/        queries Drizzle; uma função por operação; recebe `db: Db`
 | "Esqueci a senha" responde antes de consultar o banco (não revela conta nem por tempo) | `services/auth.ts` (`requestEmailCode`) |
 | Troca de senha: `sessions_valid_after` + revogação; `refresh` confere o corte **depois** de gravar o token novo (sem corrida) | `services/auth.ts` (`resetPassword`, `refresh`) |
 | Produção não sobe sem SMTP (senão o cadastro dispensaria o código) | `config.ts` |
+| `PROXY_SECRET`: só o proxy da Vercel chega na API (exceto health); IP do cliente vem de `X-Clivra-Client-Ip` | `app.ts`, `config.ts` |
+| `refresh`/`logout` com cookie recusam `Sec-Fetch-Site` cross-site/same-site (CSRF); `logout` 30/15 min | `routes/auth.ts` |
+| Limpeza a cada 6 h: refresh tokens vencidos, convites vencidos não aceitos | `services/maintenance.ts` |
 
 ## Status e próximos passos
 

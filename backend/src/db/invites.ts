@@ -1,4 +1,4 @@
-import { and, desc, eq, gt, isNull } from 'drizzle-orm';
+import { and, desc, eq, gt, isNull, lt } from 'drizzle-orm';
 import type { Db } from './client.js';
 import { invites, type InviteRow } from './schema.js';
 
@@ -50,4 +50,9 @@ export async function acceptInvite(db: Db, id: string, now: Date): Promise<boole
     .where(and(eq(invites.id, id), isActive(now)))
     .returning({ id: invites.id });
   return rows.length > 0;
+}
+
+// Convite não aceito e vencido há tempo (o aceito fica: mostra quem convidou quem).
+export async function deleteStaleInvites(db: Db, before: Date): Promise<void> {
+  await db.delete(invites).where(and(isNull(invites.acceptedAt), lt(invites.expiresAt, before)));
 }

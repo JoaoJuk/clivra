@@ -38,15 +38,16 @@ printf '{"release":"%s","environment":"%s"}
 ' "$RELEASE" "$TARGET" > release.json
 tar -czf "$TARBALL" dist drizzle package.json package-lock.json release.json
 rm -f release.json
-scp -q "$TARBALL" oracle:/tmp/clivra-release.tgz
+# No $HOME do usuário SSH, não no /tmp compartilhado da VPS.
+scp -q "$TARBALL" "oracle:clivra-release-$RELEASE.tgz"
 rm -f "$TARBALL"
 
 ssh oracle "RELEASE=$RELEASE SERVICE=$SERVICE BASE=$BASE PORT=$PORT bash -s" <<'REMOTE'
 set -euo pipefail
 DIR=$BASE/releases/$RELEASE
 sudo mkdir -p "$DIR"
-sudo tar -xzf /tmp/clivra-release.tgz -C "$DIR"
-rm -f /tmp/clivra-release.tgz
+sudo tar -xzf "$HOME/clivra-release-$RELEASE.tgz" -C "$DIR"
+rm -f "$HOME/clivra-release-$RELEASE.tgz"
 # --ignore-scripts: nenhum pacote executa código na instalação.
 sudo env PATH=/opt/node/bin:$PATH npm ci --omit=dev --ignore-scripts --no-audit --no-fund --prefix "$DIR" >/dev/null
 sudo chown -R root:root "$DIR" && sudo chmod -R go-w "$DIR"

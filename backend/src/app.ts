@@ -1,4 +1,5 @@
-import { hkdfSync } from 'node:crypto';
+import { createHash, hkdfSync, timingSafeEqual } from 'node:crypto';
+import { isIP } from 'node:net';
 import cookie from '@fastify/cookie';
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
@@ -18,6 +19,7 @@ import { authRoutes } from './routes/auth.js';
 import { healthRoutes } from './routes/health.js';
 import { createAdminService } from './services/admin.js';
 import { createAuthService } from './services/auth.js';
+import { createMaintenance } from './services/maintenance.js';
 import { createSystemService } from './services/system.js';
 import { createEmailCodeService } from './services/email-codes.js';
 import { createSmtpMailer, type Mailer } from './services/mailer.js';
@@ -39,6 +41,31 @@ const logger: FastifyServerOptions['logger'] = {
     }),
   },
 };
+
+declare module 'fastify' {
+  interface FastifyRequest {
+    // IP usado nos rate limits: o da Vercel (P-15) ou o do socket/TRUST_PROXY.
+    clientIp: string;
+  }
+}
+
+const PROXY_SECRET_HEADER = 'x-clivra-proxy-secret';
+const CLIENT_IP_HEADER = 'x-clivra-client-ip';
+
+const digest = (value: string) => createHash('sha256').update(value).digest();
+
+// Chave dos rate limits: IPv6 vira o prefixo /64 (um cliente costuma ter o /64
+// inteiro e trocaria de endereço a cada tentativa); IPv4 mapeado vira IPv4.
+export function rateLimitKey(ip: string): string {
+  const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(ip);
+  if (mapped?.[1]) return mapped[1];
+  if (isIP(ip) !== 6) return ip;
+  const [head = '', tail = ''] = ip.toLowerCase().split('::');
+  const left = head ? head.split(':') : [];
+  const right = tail ? tail.split(':') : [];
+  const groups = ip.includes('::') ? [...left, ...Array(8 - left.length - right.length).fill('0'), ...right] : left;
+  return `${groups.slice(0, 4).map((g) => Number.parseInt(g, 16).toString(16)).join(':')}::/64`;
+}
 
 // `mailer` permite trocar o SMTP por um falso nos testes.
 export async function buildApp(config: Config, database: Database, overrides: { mailer?: Mailer } = {}) {
@@ -67,10 +94,21 @@ export async function buildApp(config: Config, database: Database, overrides: { 
     return defaultJsonParser(request, text, done);
   });
 
+  const proxySecret = config.PROXY_SECRET ? digest(config.PROXY_SECRET) : undefined;
+  app.decorateRequest('clientIp', '');
   app.addHook('onRequest', async (request, reply) => {
     reply.header('x-request-id', request.id);
     // Respostas com token e dado financeiro nunca ficam em cache (navegador/proxy).
     reply.header('cache-control', 'no-store');
+
+    request.clientIp = rateLimitKey(request.ip);
+    if (!proxySecret) return;
+    // O health fica aberto: o deploy.sh confere a API direto em 127.0.0.1.
+    if (request.url.split('?')[0] === '/v1/health') return;
+    const sent = request.headers[PROXY_SECRET_HEADER];
+    if (typeof sent !== 'string' || !timingSafeEqual(digest(sent), proxySecret)) throw errors.directAccess();
+    const forwarded = request.headers[CLIENT_IP_HEADER];
+    if (typeof forwarded === 'string' && isIP(forwarded)) request.clientIp = rateLimitKey(forwarded);
   });
 
   await app.register(helmet, {
@@ -91,6 +129,7 @@ export async function buildApp(config: Config, database: Database, overrides: { 
     global: true,
     max: 300,
     timeWindow: '1 minute',
+    keyGenerator: (request) => request.clientIp,
     errorResponseBuilder: () => errors.rateLimited(),
   });
 
@@ -135,6 +174,16 @@ export async function buildApp(config: Config, database: Database, overrides: { 
   await app.register(healthRoutes, { database });
   await app.register(authRoutes, { auth, requireAuth, cookieSecure: config.COOKIE_SECURE });
   await app.register(adminRoutes, { admin, system: createSystemService({ database }), requireAdmin });
+
+  if (config.NODE_ENV !== 'test') {
+    const maintenance = createMaintenance({ db: database.db });
+    const runMaintenance = () =>
+      maintenance.run().catch((error: unknown) => app.log.error({ err: error }, 'falha na limpeza periódica'));
+    const timer = setInterval(runMaintenance, 6 * 60 * 60 * 1000);
+    timer.unref();
+    app.addHook('onReady', async () => void runMaintenance());
+    app.addHook('onClose', async () => clearInterval(timer));
+  }
 
   return app;
 }

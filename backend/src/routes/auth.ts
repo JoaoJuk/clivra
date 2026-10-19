@@ -83,8 +83,19 @@ export async function authRoutes(app: FastifyInstance, opts: AuthRouteOptions): 
     return reply.status(statusCode).send(session);
   }
 
+  // Token do corpo ou do cookie. Com cookie, recusa pedido vindo de outro site
+  // (CSRF): o SameSite=Strict já barra, isto é a segunda camada — o sslip.io
+  // não separa os sites da VPS como a Public Suffix List separa os da Vercel.
+  function findRefreshToken(request: FastifyRequest, body: z.infer<typeof refreshBody>): string | undefined {
+    if (body?.refreshToken) return body.refreshToken;
+    const token = request.cookies[REFRESH_COOKIE];
+    const site = request.headers['sec-fetch-site'];
+    if (token && (site === 'cross-site' || site === 'same-site')) throw errors.crossSite();
+    return token;
+  }
+
   function readRefreshToken(request: FastifyRequest, body: z.infer<typeof refreshBody>): string {
-    const token = body?.refreshToken ?? request.cookies[REFRESH_COOKIE];
+    const token = findRefreshToken(request, body);
     if (!token) throw errors.invalidRefreshToken();
     return token;
   }
@@ -136,7 +147,7 @@ export async function authRoutes(app: FastifyInstance, opts: AuthRouteOptions): 
       schema: { body: loginBody, response: { 200: sessionResponse } },
       config: { rateLimit: { max: 10, timeWindow: '15 minutes' } },
     },
-    async (request, reply) => sendSession(reply, await auth.login(request.body, request.ip), 200),
+    async (request, reply) => sendSession(reply, await auth.login(request.body, request.clientIp), 200),
   );
 
   r.post(
@@ -146,8 +157,9 @@ export async function authRoutes(app: FastifyInstance, opts: AuthRouteOptions): 
       config: { rateLimit: { max: 60, timeWindow: '15 minutes' } },
     },
     async (request, reply) => {
+      const token = readRefreshToken(request, request.body);
       try {
-        return sendSession(reply, await auth.refresh(readRefreshToken(request, request.body)), 200);
+        return sendSession(reply, await auth.refresh(token), 200);
       } catch (error) {
         reply.clearCookie(REFRESH_COOKIE, cookieOptions);
         throw error;
@@ -155,12 +167,16 @@ export async function authRoutes(app: FastifyInstance, opts: AuthRouteOptions): 
     },
   );
 
-  r.post('/v1/auth/logout', { schema: { body: refreshBody } }, async (request, reply) => {
-    const token = request.body?.refreshToken ?? request.cookies[REFRESH_COOKIE];
-    if (token) await auth.logout(token);
-    reply.clearCookie(REFRESH_COOKIE, cookieOptions);
-    return reply.status(204).send();
-  });
+  r.post(
+    '/v1/auth/logout',
+    { schema: { body: refreshBody }, config: { rateLimit: { max: 30, timeWindow: '15 minutes' } } },
+    async (request, reply) => {
+      const token = findRefreshToken(request, request.body);
+      if (token) await auth.logout(token);
+      reply.clearCookie(REFRESH_COOKIE, cookieOptions);
+      return reply.status(204).send();
+    },
+  );
 
   r.get(
     '/v1/auth/me',

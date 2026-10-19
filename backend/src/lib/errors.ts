@@ -46,6 +46,8 @@ export const errors = {
     ]),
   emailDisabled: () => new AppError(503, 'SERVICE_UNAVAILABLE', 'O envio de e-mail não está configurado no servidor.'),
   accountDisabled: () => new AppError(403, 'FORBIDDEN', 'Sua conta está bloqueada. Fale com o administrador.'),
+  directAccess: () => new AppError(403, 'FORBIDDEN', 'Acesso direto à API não é permitido.'),
+  crossSite: () => new AppError(403, 'FORBIDDEN', 'Requisição de outro site recusada.'),
   adminOnly: () => new AppError(403, 'FORBIDDEN', 'Acesso restrito ao administrador.'),
   emailTaken: () => new AppError(409, 'CONFLICT', 'Já existe uma conta com este e-mail.'),
   cannotChangeSelf: () => new AppError(422, 'UNPROCESSABLE', 'Você não pode fazer isso com a sua própria conta.'),

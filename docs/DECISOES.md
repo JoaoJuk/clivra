@@ -1,6 +1,6 @@
 # Decisões, status e pendências
 
-Última atualização: 2026-10-16. Este arquivo mostra **só o estado atual**. O
+Última atualização: 2026-10-19. Este arquivo mostra **só o estado atual**. O
 histórico completo (discussões, pendências já resolvidas) está no git:
 `git log -p docs/DECISOES.md`.
 
@@ -72,6 +72,37 @@ Entram no contrato como **v1.1.0** (só adições) quando o ChatGPT confirmar.
 
 ## Pendências abertas
 
+### P-21 — Revisão de segurança de 2026-10-19 (externa) — itens do front (ChatGPT)
+O back já corrigiu a parte dele (ver P-15 e o Changelog 1.0.5 do contrato:
+CSRF em `refresh`/`logout`, rate limit no `logout`, limpeza de
+`refresh_tokens`/convites vencidos, `deploy.sh` fora do `/tmp`). Falta no front:
+1. **Categorias de uma pessoa aparecendo para outra no mesmo aparelho (D17)**
+   (`main.tsx`, `lib/query.ts`, `App.tsx`): a query `['categories']` é
+   persistida no `localStorage` (`cartao.queryCache.v2`) sem o `user.id`, com
+   `staleTime` de 24 h. Usar `['categories', user.id]` e, no `restore()`,
+   descartar o cache persistido se `session.user.id` ≠ último usuário. Cuidado
+   com o `throttleTime: 1000` do persister: `queryClient.clear()` seguido de
+   `queryPersisterRemove()` pode ser regravado logo depois.
+2. **Logout travado por falha do push** (`App.tsx` `onLogout`, `lib/push.ts`):
+   se `DELETE /v1/push/subscribe` falhar (hoje dá 404 — a rota ainda não
+   existe), `disablePush()` lança e `api.logout()` nunca roda. Fazer o
+   `unsubscribe()` local e a chamada à API em `try/catch` próprio, e sempre
+   seguir para `api.logout()` + `clearLocalData()`.
+3. **`exportTransactions()` fora do `ApiClient.request()`** (`lib/api.ts`):
+   falta `cache: 'no-store'` e a checagem de `loggingOut`/`generation`; um
+   export em andamento termina mesmo depois do Sair.
+4. **`npm run dev` com `--host 0.0.0.0`** (`frontend/package.json`): expõe o
+   front e o proxy `/v1` para a rede Wi-Fi. Usar o padrão (localhost) e só
+   abrir a rede quando for testar no iPhone (`npm run dev -- --host`).
+
+### P-22 — 2FA no login (decisão do humano)
+Hoje o login é só e-mail + senha; senha vazada ⇒ entra como admin. Como a
+sessão dura 30 dias, um 2º fator no login quase não pesa no dia a dia (P3).
+Opções: **A)** código de 6 dígitos por e-mail no login (reusa o serviço de
+`email-codes` e a tela de código que já existe) ou **B)** app autenticador
+(TOTP). Aguardando o humano escolher e se vale para todos ou só o admin.
+Exige mudança no contrato §1 (acordo com o front).
+
 ### P-20 — Família: cadastro por convite e painel do admin — ✅ feito pelo Claude
 O **Claude fez as telas com autorização do humano** (2026-10-16):
 `ui/AdminPanel.tsx` (novo), `SettingsPage.tsx`, `AuthView.tsx`
@@ -131,11 +162,30 @@ do humano, no commit `ff680c7`. Revise se quiser. Falta, por prioridade:
 > abertos; 7–8 são novos. XSS, tokens, service worker, CSP/headers, segredos
 > no bundle e dependências estão OK; `npm audit` sem vulnerabilidades.
 
-### P-15 — VPS aceitar só tráfego vindo da Vercel (Claude + ChatGPT, sem pressa)
-Hoje quem souber a URL sslip.io chama a API direto. O back já se protege
-(rate limit, limite por conta, código no cadastro), mas o ideal é o Caddy
-recusar o que não veio da Vercel — provavelmente com Vercel Routing Middleware
-injetando um cabeçalho secreto. Envolve front e VPS.
+### P-15 — VPS aceitar só tráfego vindo da Vercel — ✅ back pronto, falta front + segredo
+Hoje quem souber a URL sslip.io (aparece nos logs de Certificate
+Transparency) chama a API direto. E, com `TRUST_PROXY=1` e o Caddy (que
+descarta o `X-Forwarded-For` de quem chega), o IP que a API enxerga é o da
+Vercel: **toda a família divide o mesmo rate limit por IP** (ex.: 10 logins
+errados em 15 min). Não dá para forjar IP hoje, mas dá para travar os outros.
+**Back (feito, 2026-10-19):** com `PROXY_SECRET` (≥ 32 caracteres) no
+`/etc/clivra/clivra.env`, a API responde `403 FORBIDDEN` a quem não mandar
+`X-Clivra-Proxy-Secret` correto (exceto `GET /v1/health`, usado pelo deploy) e
+usa `X-Clivra-Client-Ip` como IP do cliente nos rate limits. Sem a variável,
+nada muda.
+**Front (ChatGPT, `frontend/middleware.ts`):** no `rewrite`, passar
+`request: { headers }` com uma cópia dos headers de entrada acrescida de
+`X-Clivra-Proxy-Secret: process.env.CLIVRA_PROXY_SECRET` (prod) /
+`CLIVRA_PROXY_SECRET_HML` (preview) e `X-Clivra-Client-Ip: ipAddress(request)`
+(de `@vercel/functions`), **sobrescrevendo** o que o cliente tenha mandado
+nesses dois nomes. Sem a variável de ambiente ⇒ 503, como já faz hoje.
+**Humano, nesta ordem:** gerar o segredo na VPS, cadastrá-lo na Vercel (tipo
+*Sensitive*), publicar o front, e só então pôr `PROXY_SECRET` no `.env` da VPS
+e reiniciar. O Claude faz a parte da VPS quando pedido.
+Depois de ativado: tornar `PROXY_SECRET` obrigatório em produção no
+`config.ts` (como o SMTP), para a proteção não sumir em silêncio se a linha
+sair do `.env`. A Vercel tem de **sobrescrever** `X-Clivra-Client-Ip` (não
+acrescentar). Os rate limits por IP agrupam IPv6 por /64.
 
 ### P-17 — Tirar o `refreshToken` do corpo da resposta (Claude)
 O front já usa só o cookie. Remover o campo do corpo de `login`/`register`/
