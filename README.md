@@ -34,16 +34,6 @@
 - `backend/`  — API Fastify + Drizzle ORM
 - `docs/`     — contrato da API e decisões de arquitetura
 
-## Como rodar
-
-```bash
-# Back-end
-cd backend && npm install && cp .env.example .env && npm run dev   # http://localhost:3333
-
-# Front-end
-cd frontend && npm install && cp .env.example .env && npm run dev   # http://localhost:5173
-```
-
 ---
 
 Projeto pessoal desenvolvido por [João Vitor Juk Lopes](https://github.com/JoaoJuk).
